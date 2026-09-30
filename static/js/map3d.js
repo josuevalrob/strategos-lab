@@ -114,16 +114,16 @@
   Graph3D.prototype.nodeLook = function (n) {
     var st = this.state, look = {
       fill: Lab.css("--node-fill"), border: Lab.css(GROUP_VAR[n.group] || "--c-manager"),
-      text: Lab.css("--text"), opacity: n.dim ? 0.55 : 1, width: n.group === "question" ? 0.9 : 0.55
+      text: Lab.css(n.dim ? "--muted" : "--text"), opacity: 1, width: n.group === "question" ? 0.9 : 0.55
     };
     if (n.bad) { look.border = Lab.css("--c-bad"); look.fill = Lab.css("--err-soft"); }
     if (!st) return look;
     var role = st.roles[n.id];
-    if (!role) { look.opacity = 0.1; return look; }
+    if (!role) { look.text = Lab.css("--muted"); look.border = Lab.css("--edge"); look.width = 0.4; return look; }
     if (role === "hl") { look.border = Lab.css("--accent"); look.width = 1.2; }
     if (role === "part") { look.border = Lab.css("--hl"); look.width = 1.2; }
     if (role === "rule") { look.border = Lab.css("--warn"); look.width = 1.2; }
-    if (role === "grey") { look.text = Lab.css("--muted"); look.border = Lab.css("--muted"); look.opacity = 0.8; }
+    if (role === "grey") { look.text = Lab.css("--muted"); look.border = Lab.css("--muted"); }
     if (role === "chosen") { look.fill = Lab.css("--accent"); look.border = Lab.css("--accent"); look.text = "#ffffff"; look.width = 1.2; }
     return look;
   };
@@ -163,8 +163,9 @@
     s.fontWeight = n.group === "question" || n.group === "prompt" ? "bold" : "normal";
     s.padding = [3, 1.6];
     s.borderRadius = 2.2;
-    s.material.transparent = true;
-    s.material.depthWrite = false;
+    s.material.transparent = false;
+    s.material.alphaTest = 0.5;
+    s.material.depthWrite = true;
     s.renderOrder = 2;
     this.style(s, n);
     return s;
