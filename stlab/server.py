@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import clone, code, config, editor, gitops, map3d, mapgraph, models, prompts, qa, runs
+from . import ask, clone, code, config, editor, gitops, map3d, mapgraph, models, prompts, qa, runs
 
 STATIC = config.LAB_ROOT / "static"
 
@@ -24,6 +24,7 @@ class Lab:
         self.cfg = cfg
         self.registry = runs.Registry(cfg)
         self.write_lock = threading.Lock()
+        self.asker = ask.Asker(cfg.repo)
 
     def facts(self) -> code.CodeFacts:
         return code.load(self.cfg)
@@ -160,6 +161,10 @@ class Lab:
                 "civ_files": [c["civ"] for c in qa.list_files(self.cfg)["civs"]]}
 
     # -- POST ---------------------------------------------------------------
+    def p_ask(self, body):
+        res = self.question({"run": [str(body.get("run") or "")], "idx": [str(body.get("idx"))]})
+        return ask_ok(self.asker.ask(str(body.get("model")), res))
+
     def p_validate(self, body):
         rel = body.get("path")
         if not config.is_qa_path(rel):
@@ -207,6 +212,11 @@ class Lab:
         with self.write_lock:
             return clone.clone(self.cfg, self.facts(), body.get("src", "spart"), body.get("dst", ""),
                                body.get("name"), live_runs=self.registry.live_runs())
+
+
+def ask_ok(out: dict) -> dict:
+    """The asker's own ok=False is an answer to show, not an HTTP error."""
+    return {"ok": True, "result": out}
 
 
 def _one(q: dict, key: str, default: str | None = None) -> str:
@@ -281,7 +291,7 @@ GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file", "
               "/api/live": "live", "/api/question": "question", "/api/models": "models",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
               "/api/civcodes": "civcodes"}
-POST_ROUTES = {"/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",
+POST_ROUTES = {"/api/ask": "p_ask", "/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",
                "/api/format": "p_format",
                "/api/restore": "p_restore", "/api/clone/preview": "p_clone_preview",
                "/api/clone": "p_clone"}
