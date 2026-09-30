@@ -77,12 +77,14 @@
         </div>
         <div id="timeline" class="timeline"></div>
       </div>
+      <div class="vsplit" id="game-vsplit" title="Drag left / right"></div>
       <div class="right-pane">
         <div class="mini-wrap">
           <div id="game-cy" class="cy mini"></div>
           <div id="game-3d" class="cy mini g3d hidden"></div>
           <div class="seg mini-bar" id="game-dim"><button data-d="2d" class="on">2D</button><button data-d="3d">3D</button></div>
         </div>
+        <div class="hsplit" id="game-hsplit" title="Drag up / down"></div>
         <div id="io-panel" class="io-panel"><p class="muted">Pick a question on the left.</p></div>
       </div>
     </div>
@@ -143,6 +145,7 @@
 <script src="/static/js/map3d.js"></script>
 <script src="/static/js/mapview.js"></script>
 <script src="/static/js/game.js"></script>
+<script src="/static/js/splitters.js"></script>
 <script src="/static/js/models.js"></script>
 <script src="/static/js/editor.js"></script>
 <script>Lab.start();</script>
