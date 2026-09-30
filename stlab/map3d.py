@@ -16,26 +16,29 @@ from . import code, config, mapgraph
 
 COL_X = 280.0
 ROW_Y = 42.0
-PLANE_Z = {"reads": 240.0, "both": 0.0, "pick": -240.0}
+PLANE_Z = {"reads": 240.0, "both": 0.0, "pick": -240.0, "petra": -480.0}
 PLANES = [
     {"id": "reads", "label": "What the model READS", "z": PLANE_Z["reads"]},
     {"id": "pick", "label": "What the model CAN PICK", "z": PLANE_Z["pick"]},
+    {"id": "petra", "label": "PETRA managers / queues", "z": PLANE_Z["petra"]},
 ]
 COLUMNS = {
     "reads": ["Inputs", "Prompt", "play"],
-    "pick": ["Triggers", "Why asked (parts)", "play options", "Petra action", "Petra managers / queues"],
+    "pick": ["Triggers", "Why asked (parts)", "play options", "Petra action"],
+    "petra": [None, None, None, None, "Petra managers / queues"],
 }
 LEGEND = [
     {"kind": "reads", "label": "prompt (reads)", "dashed": False},
     {"kind": "picks", "label": "play offers", "dashed": False},
     {"kind": "offers", "label": "trigger / part", "dashed": False},
     {"kind": "petra", "label": "to Petra", "dashed": False},
+    {"kind": "manager", "label": "to manager (bright on focus)", "dashed": False},
     {"kind": "describes", "label": "hero file describes", "dashed": True},
     {"kind": "config", "label": "switches on / event", "dashed": True},
 ]
 
 GROUP_PLACE = {"input": ("reads", 0), "part": ("pick", 1), "option": ("pick", 2),
-               "action": ("pick", 3), "manager": ("pick", 4), "queue": ("pick", 4)}
+               "action": ("pick", 3), "manager": ("petra", 4), "queue": ("petra", 4)}
 
 TRIGGER_LABELS = {
     "pass_order": "enemy at the pass, new read,\nnew playbook, phase, rule",
@@ -99,6 +102,7 @@ def build(cfg: config.Config, civ: str = "spart") -> dict:
                           "who": part.get("who"),
                           "anchors": [facts.anchor(a) for a in part.get("anchors", [])]}})
     ids = {n["id"] for n in nodes}
+    group = {n["id"]: n["group"] for n in nodes}
 
     edges: list[dict] = []
 
@@ -107,7 +111,8 @@ def build(cfg: config.Config, civ: str = "spart") -> dict:
             eid = f"{src}->{dst}"
             if not any(e["id"] == eid for e in edges):
                 edges.append({"id": eid, "source": src, "target": dst, "label": label,
-                              "kind": _edge_kind(src, dst, style), "dashed": style == "dashed"})
+                              "kind": "manager" if group.get(dst) in ("manager", "queue") else _edge_kind(src, dst, style),
+                              "dashed": style == "dashed"})
 
     for e in g["edges"]:
         if e["target"] == "q:play":
@@ -141,7 +146,7 @@ def build(cfg: config.Config, civ: str = "spart") -> dict:
                        "x1": (max(cols) - 2) * COL_X + COL_X / 2,
                        "y0": min(ys) - ROW_Y * 1.5, "y1": max(ys) + ROW_Y * 3})
     columns = [{"plane": p, "col": i, "x": (i - 2) * COL_X, "label": label}
-               for p, labels in COLUMNS.items() for i, label in enumerate(labels)]
+               for p, labels in COLUMNS.items() for i, label in enumerate(labels) if label]
     return {"civ": civ, "nodes": nodes, "edges": edges, "planes": planes, "columns": columns,
             "legend": LEGEND, "warnings": g["warnings"], "code_errors": g["code_errors"],
             "civs": g["civs"]}

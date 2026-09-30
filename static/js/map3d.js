@@ -17,7 +17,7 @@
     question: "--c-question", option: "--c-option", action: "--c-action", manager: "--c-manager",
     queue: "--c-queue" };
   var KIND_VAR = { reads: "--c-input", picks: "--c-question", offers: "--c-part", petra: "--c-action",
-    describes: "--c-describes", config: "--edge" };
+    describes: "--c-describes", config: "--edge", manager: "--c-manager" };
 
   function Graph3D(container, opts) {
     this.el = container;
@@ -130,7 +130,7 @@
 
   Graph3D.prototype.linkLook = function (l) {
     var st = this.state, color = Lab.css(KIND_VAR[l.kind] || "--edge");
-    var look = { color: color, opacity: l.dashed ? 0.5 : 0.6 };
+    var look = { color: color, opacity: l.kind === "manager" ? 0.12 : l.dashed ? 0.5 : 0.6 };
     if (!st) return look;
     var role = st.links[l.id];
     if (!role) return { color: color, opacity: 0.04 };
@@ -205,7 +205,7 @@
     }
     var grp = new THREE.Group();
     var line = Lab.css("--border"), muted = Lab.css("--muted");
-    var tint = { reads: Lab.css("--c-input"), pick: Lab.css("--c-option") };
+    var tint = { reads: Lab.css("--c-input"), pick: Lab.css("--c-option"), petra: Lab.css("--c-manager") };
     d.planes.forEach(function (p) {
       var w = p.x1 - p.x0, h = p.y1 - p.y0, cx = (p.x0 + p.x1) / 2, cy = (p.y0 + p.y1) / 2;
       var geo = new THREE.PlaneGeometry(w, h);
@@ -221,7 +221,7 @@
       title.color = tint[p.id];
       title.fontWeight = "bold";
       title.material.depthWrite = false;
-      title.position.set(p.x0 + 200, p.y1 + 26, p.z);
+      title.position.set(w < 500 ? cx : p.x0 + 200, p.y1 + 26, p.z);
       grp.add(title);
       d.columns.filter(function (c) { return c.plane === p.id; }).forEach(function (c) {
         var g2 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(c.x, p.y0 + 6, p.z), new THREE.Vector3(c.x, p.y1 - 30, p.z)]);
@@ -237,9 +237,11 @@
     });
     // Where the two flows meet: a dashed guide through play, from one plane to the other.
     var play = this.byId["q:play"];
-    if (play && d.planes.length === 2) {
-      var g3 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(play.pos.x, play.pos.y, d.planes[0].z),
-        new THREE.Vector3(play.pos.x, play.pos.y, d.planes[1].z)]);
+    var pr = d.planes.filter(function (p) { return p.id === "reads"; })[0],
+      pp = d.planes.filter(function (p) { return p.id === "pick"; })[0];
+    if (play && pr && pp) {
+      var g3 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(play.pos.x, play.pos.y, pr.z),
+        new THREE.Vector3(play.pos.x, play.pos.y, pp.z)]);
       var l3 = new THREE.Line(g3, new THREE.LineDashedMaterial({ color: Lab.css("--c-question"), dashSize: 5, gapSize: 4,
         transparent: true, opacity: 0.6 }));
       l3.computeLineDistances();
