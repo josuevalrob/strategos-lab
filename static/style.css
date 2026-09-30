@@ -273,9 +273,6 @@ pre.diff .hunk { color: var(--accent); display: block; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 50; max-width: 80vw; box-shadow: var(--shadow); }
 .toast.err { background: var(--err); color: #fff; }
 
-/* Ask Jev / Laya (hover menu in the In -> out head) */
-.ask-menu { position: relative; display: inline-block; }
-.ask-menu .ask-pop { display: none; position: absolute; right: 0; top: 100%; z-index: 20; padding: 4px; gap: 4px;
-  background: var(--node-fill); border: 1px solid var(--border); border-radius: 6px; white-space: nowrap; }
-.ask-menu:hover .ask-pop, .ask-menu:focus-within .ask-pop { display: flex; }
-.ask-card { margin: 6px 0 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--node-fill); }
+/* Ask Jev + Laya tab: two answers side by side */
+.ask-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ask-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--node-fill); min-width: 0; }

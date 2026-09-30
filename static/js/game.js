@@ -286,13 +286,22 @@
     return JSON.stringify(v, null, 2);
   }
 
-  /* Ask Jev / Laya this same prompt again; show the answer next to what was logged. */
-  V.ask = function (model, e, out) {
-    var name = model === "jev" ? "Jev" : "Laya";
-    out.innerHTML = '<p class="muted small">Asking ' + name + "…" + (model === "laya" ? " (first Laya ask loads the model, ~40 s)" : "") + "</p>";
-    Lab.post("/api/ask", { run: V.run, idx: V.selected, model: model }).then(function (res) {
-      var r = res.result;
-      if (!r.ok) { out.innerHTML = '<p class="pill err">' + name + ": " + Lab.esc(r.error) + "</p>"; return; }
+  /* Ask Jev and Laya this same prompt again, both at once; answers side by side,
+     next to what was logged.  Results are kept per question while the page is open. */
+  V.askCache = {};
+  V.askTab = function (e, out) {
+    var key = V.run + "#" + V.selected;
+    out.innerHTML = '<p><button class="btn js-ask-both">Ask Jev + Laya</button> ' +
+      '<span class="muted small">same prompt, both models at once · logged choice: <code>' + Lab.esc(e.choice || "no answer") + "</code>" +
+      " · first Laya ask loads the model (~40 s)</span></p>" +
+      '<div class="ask-grid"><div class="js-ask-jev"></div><div class="js-ask-laya"></div></div>';
+    function card(model, st) {
+      var name = model === "jev" ? "Jev" : "Laya", el = out.querySelector(".js-ask-" + model);
+      if (!el) return;
+      if (!st) { el.innerHTML = '<div class="ask-card"><b>' + name + '</b><p class="muted small">not asked yet</p></div>'; return; }
+      if (st.pending) { el.innerHTML = '<div class="ask-card"><b>' + name + '</b><p class="muted small">asking…</p></div>'; return; }
+      var r = st.r;
+      if (!r.ok) { el.innerHTML = '<div class="ask-card"><b>' + name + '</b><p class="pill err">' + Lab.esc(r.error) + "</p></div>"; return; }
       var probs = r.probabilities || {};
       var bars = Object.keys(probs).sort(function (x, y) { return probs[y] - probs[x]; }).map(function (k) {
         return '<span class="name">' + Lab.esc(k) + "</span>" +
@@ -300,12 +309,26 @@
           "<span>" + Math.round(probs[k] * 100) + "%</span>";
       }).join("");
       var same = r.choice === e.choice;
-      out.innerHTML = '<div class="ask-card"><b>' + name + " now:</b> <code>" + Lab.esc(r.choice) + "</code> " +
-        '<span class="pill ' + (same ? "ok" : "warn") + '">' + (same ? "same as logged" : "logged: " + Lab.esc(e.choice || "no answer")) + "</span>" +
-        ' <span class="muted small">' + Lab.esc(r.model || "") + " · " + r.ms + " ms" + (r.load_s ? " · model load " + r.load_s + " s" : "") + "</span>" +
+      el.innerHTML = '<div class="ask-card"><b>' + name + ":</b> <code>" + Lab.esc(r.choice) + "</code> " +
+        '<span class="pill ' + (same ? "ok" : "warn") + '">' + (same ? "same as logged" : "differs from logged") + "</span>" +
+        '<div class="muted small">' + Lab.esc(r.model || "") + " · " + r.ms + " ms" + (r.load_s ? " · model load " + r.load_s + " s" : "") + "</div>" +
         (bars ? '<div class="probs">' + bars + "</div>" : "") +
         '<details><summary class="small muted">raw reply</summary><pre class="block">' + Lab.esc(r.raw || "") + "</pre></details></div>";
-    }).catch(function (err) { out.innerHTML = '<p class="pill err">' + Lab.esc(err.message) + "</p>"; });
+    }
+    function draw() { var c = V.askCache[key] || {}; card("jev", c.jev); card("laya", c.laya); }
+    draw();
+    out.querySelector(".js-ask-both").addEventListener("click", function () {
+      var c = V.askCache[key] = {};
+      ["jev", "laya"].forEach(function (model) {
+        c[model] = { pending: true };
+        Lab.post("/api/ask", { run: V.run, idx: V.selected, model: model }).then(function (res) {
+          c[model] = { r: res.result };
+        }).catch(function (err) {
+          c[model] = { r: { ok: false, error: err.message } };
+        }).then(function () { if (V.run + "#" + V.selected === key && V.ioTab === "ask") card(model, c[model]); });
+      });
+      draw();
+    });
   };
 
   V.renderIo = function (res) {
@@ -328,9 +351,7 @@
     h.push('<div class="io-head"><h3>q#' + e.qid + " · " + Lab.esc(e.kind) + "</h3>" +
       '<span class="muted">minute ' + Lab.esc(e.minute) + " · player " + Lab.esc(e.player) + "</span>" + modePill +
       (res.map_path && !res.map_path.on_map ? '<span class="pill">not on the play map (raid / separate question)</span>' : "") +
-      '<span class="spacer"></span><span class="ask-menu"><button class="btn tiny">Ask ▾</button><span class="ask-pop">' +
-      '<button class="btn tiny js-ask" data-m="jev">Ask Jev</button><button class="btn tiny js-ask" data-m="laya">Ask Laya</button>' +
-      '</span></span><button class="btn tiny js-map">Open on the Map</button></div><div class="js-ask-out"></div>');
+      '<span class="spacer"></span><button class="btn tiny js-map">Open on the Map</button></div>');
     h.push('<dl class="kv">' +
       "<dt>Why asked</dt><dd>" + (trig || "-") + "</dd>" +
       "<dt>Offered</dt><dd>" + e.options.map(function (o) { return '<span class="opt' + (o === used ? " chosen" : "") + (o === e.rule ? " rule" : "") + '">' + Lab.esc(o) + "</span>"; }).join("") + "</dd>" +
@@ -341,15 +362,12 @@
       "<dt>Petra did</dt><dd>" + Lab.esc(a.text || "-") + (a.line ? ' <span class="muted small">(engine.log:' + a.line + ")</span>" : "") + "</dd>" +
       '<dt>Logged at</dt><dd class="small muted">advisor/' + Lab.esc(e.source.file) + ":" + Lab.esc(e.source.line) + "</dd></dl>");
     h.push(probHtml);
-    h.push('<div class="io-tabs">' + ["prompt", "request", "reply", "petra"].map(function (t) {
-      var label = { prompt: "Prompt", request: "Request", reply: "Raw reply", petra: "Petra (engine.log)" }[t];
+    h.push('<div class="io-tabs">' + ["prompt", "request", "reply", "petra", "ask"].map(function (t) {
+      var label = { prompt: "Prompt", request: "Request", reply: "Raw reply", petra: "Petra (engine.log)", ask: "Ask Jev + Laya" }[t];
       return '<button data-t="' + t + '"' + (t === V.ioTab ? ' class="on"' : "") + ">" + label + "</button>";
     }).join("") + '</div><div class="js-io"></div>');
     var panel = document.getElementById("io-panel");
     panel.innerHTML = h.join("");
-    panel.querySelectorAll(".js-ask").forEach(function (b) {
-      b.addEventListener("click", function () { V.ask(b.dataset.m, e, panel.querySelector(".js-ask-out")); });
-    });
     panel.querySelector(".js-map").addEventListener("click", function () {
       Lab.show("map", { civ: V.graphCiv, node: (res.map_path && res.map_path.chosen) || "q:play" });
     });
@@ -358,7 +376,9 @@
       panel.querySelectorAll(".io-tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.t === t); });
       var out = panel.querySelector(".js-io");
       var notes = (io.notes || []).length ? '<ul class="small muted">' + io.notes.map(function (n) { return "<li>" + Lab.esc(n) + "</li>"; }).join("") + "</ul>" : "";
-      if (t === "prompt") {
+      if (t === "ask") {
+        V.askTab(e, out);
+      } else if (t === "prompt") {
         out.innerHTML = notes + (io.ok === false ? '<p class="pill err">' + Lab.esc(io.error) + "</p>" : "") +
           '<pre class="block">' + Lab.esc(io.prompt || "(no prompt)") + "</pre>";
       } else if (t === "request") {
