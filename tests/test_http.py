@@ -99,6 +99,11 @@ class HttpSmokeTest(unittest.TestCase):
                     "/static/js/models.js", "/static/js/editor.js"):
             self.assertIn(src, html)
             self.assertTrue(len(self.get(src, raw=True)) > 100, src)
+        for src in ("/static/js/map3d.js", "/static/js/map3d-boot.mjs", "/static/vendor/3d-force-graph.min.js",
+                    "/static/vendor/three/three.module.js", "/static/vendor/three/three.core.js",
+                    "/static/vendor/three-spritetext.mjs"):
+            self.assertTrue(len(self.get(src, raw=True)) > 300, src)
+        self.assertIn('"three": "/static/vendor/three/three.module.js"', html)
         self.get("/static/../lab.py", status=404, raw=True)
         self.get("/nope", status=404)
 
@@ -127,6 +132,9 @@ class HttpSmokeTest(unittest.TestCase):
                          dj["text"])
         m = self.get("/api/map?civ=spart")
         self.assertGreater(len(m["nodes"]), 40)
+        m3 = self.get("/api/map3d?civ=spart")
+        self.assertEqual([p["id"] for p in m3["planes"]], ["reads", "pick"])
+        self.assertTrue(all("pos" in n and "plane" in n for n in m3["nodes"]))
         line = [n for n in m["nodes"] if n["id"] == "part:hero_next"][0]["details"]["anchors"][0]["line"]
         src = self.get(f"/api/source?file=head.js&line={line}")
         self.assertTrue(any(x["n"] == line for x in src["lines"]))

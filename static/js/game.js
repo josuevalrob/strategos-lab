@@ -26,6 +26,37 @@
     var follow = document.getElementById("game-follow");
     follow.addEventListener("change", function () { V.follow = follow.checked; });
     V.kind = Lab.store.get("lab.game.kind", "play");
+    // The mini map in 2D or 3D (the timeline's path lights up in both).
+    V.graph3 = new Lab.Graph3D(document.getElementById("game-3d"), {
+      zoomToPath: true,
+      onSelect: function (n) { Lab.show("map", { civ: V.graphCiv, node: n.id }); }
+    });
+    document.querySelectorAll("#game-dim button").forEach(function (b) {
+      b.addEventListener("click", function () { V.setDim(b.dataset.d); });
+    });
+    V.dim = Lab.store.get("lab.game.dim", "2d");
+    V.setDim(V.dim);
+  };
+
+  V.setDim = function (dim) {
+    V.dim = dim;
+    Lab.store.set("lab.game.dim", dim);
+    document.querySelectorAll("#game-dim button").forEach(function (b) { b.classList.toggle("on", b.dataset.d === dim); });
+    document.getElementById("game-cy").classList.toggle("hidden", dim !== "2d");
+    document.getElementById("game-3d").classList.toggle("hidden", dim !== "3d");
+    if (dim === "2d") { V.graph.fit(); return; }
+    V.show3d();
+  };
+
+  /* Load the 3D mini map for the run's civ (once per civ) and light the current path. */
+  V.show3d = function () {
+    if (V.dim !== "3d" || !V.graphCiv) return;
+    var civ = V.graphCiv;
+    var done = function () { if (V.lastIo) V.graph3.highlight(V.lastIo.map_path); };
+    if (V.graph3Civ === civ) { V.graph3.resize(); done(); return; }
+    Lab.get("/api/map3d", { civ: civ }).then(function (data) {
+      return V.graph3.load(data).then(function () { V.graph3Civ = civ; done(); });
+    }).catch(function (e) { Lab.toast("3D map: " + e.message, true); });
   };
 
   V.shown = function () {
@@ -42,8 +73,8 @@
     V.startPolling();
   };
 
-  V.mapStale = function () { V.graphCiv = null; };
-  V.onTheme = function () { V.graph.restyle(); };
+  V.mapStale = function () { V.graphCiv = null; V.graph3Civ = null; };
+  V.onTheme = function () { V.graph.restyle(); V.graph3.restyle(); };
 
   V.loadRuns = function () {
     return Lab.get("/api/runs").then(function (res) {
@@ -81,6 +112,7 @@
     document.getElementById("timeline").innerHTML = "";
     document.getElementById("io-panel").innerHTML = '<p class="muted">Pick a question on the left.</p>';
     V.graph.clearHighlight();
+    if (V.graph3) V.graph3.clearHighlight();
   };
 
   V.reload = function () {
@@ -169,6 +201,7 @@
     Lab.get("/api/map", { civ: civ }).then(function (data) {
       V.graph.load(data);
       if (V.lastIo) V.graph.highlight(V.lastIo.map_path);
+      V.show3d();
     }).catch(function () {
       V.graphCiv = null;
       document.getElementById("game-cy").innerHTML = '<p class="muted" style="padding:12px">No civ file for ' + Lab.esc(civ) + ": no map.</p>";
@@ -240,6 +273,7 @@
       if (V.selected !== idx) return;
       V.lastIo = res;
       V.graph.highlight(res.map_path);
+      if (V.dim === "3d") V.show3d();
       V.renderIo(res);
     }).catch(function (e) { panel.innerHTML = '<p class="pill err">' + Lab.esc(e.message) + "</p>"; });
   };

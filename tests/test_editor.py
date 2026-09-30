@@ -185,7 +185,8 @@ class EditorTest(unittest.TestCase):
         log = editor.history(self.cfg, PLAY)
         self.assertEqual([c["subject"] for c in log], ["Strategos lab: wording 1", "fixture"])
         d = editor.diff(self.cfg, PLAY, self.first, res["commit"])
-        self.assertIn("-    \"economy\": \"send no order now\",", d["diff"])
+        was = json.loads(original)["questions"]["play"]["criteria"]["economy"]
+        self.assertIn("-    \"economy\": " + json.dumps(was, ensure_ascii=False) + ",", d["diff"])
         self.assertIn("+    \"economy\": \"send no order now: Petra's economy runs\",", d["diff"])
         self.assertTrue(editor.diff(self.cfg, PLAY, res["commit"], "working")["same"])
         dd = editor.diff(self.cfg, PLAY, "working", "draft", draft=original)

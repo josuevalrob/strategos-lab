@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import clone, code, config, editor, gitops, mapgraph, models, prompts, qa, runs
+from . import clone, code, config, editor, gitops, map3d, mapgraph, models, prompts, qa, runs
 
 STATIC = config.LAB_ROOT / "static"
 
@@ -88,6 +88,9 @@ class Lab:
 
     def map(self, q):
         return mapgraph.build(self.cfg, _one(q, "civ", "spart"))
+
+    def map3d(self, q):
+        return map3d.build(self.cfg, _one(q, "civ", "spart"))
 
     def source(self, q):
         fkey = _one(q, "file")
@@ -273,6 +276,7 @@ def map_path(entry: dict, ids: set, edges: list | None = None) -> dict:
 
 
 GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file", "/api/map": "map",
+              "/api/map3d": "map3d",
               "/api/source": "source", "/api/runs": "runs", "/api/timeline": "timeline",
               "/api/live": "live", "/api/question": "question", "/api/models": "models",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
