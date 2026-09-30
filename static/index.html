@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategos Lab</title>
+<link rel="stylesheet" href="/static/style.css">
+<script>
+  // Theme before paint: saved choice, else the system's.
+  (function () {
+    try {
+      var t = localStorage.getItem("lab.theme");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) { /* storage off: follow the system */ }
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Strategos Lab</div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-tab="map" role="tab">Map</button>
+    <button class="tab" data-tab="game" role="tab">Game</button>
+    <button class="tab" data-tab="models" role="tab">Models</button>
+    <button class="tab" data-tab="edit" role="tab">Edit</button>
+  </nav>
+  <div class="topright">
+    <span id="live-badge" class="live-badge hidden" title="A game is running">LIVE</span>
+    <span id="repo-badge" class="badge"></span>
+    <button id="theme-btn" class="btn ghost" title="Theme: auto / light / dark">Theme</button>
+  </div>
+</header>
+<div id="banner" class="banner hidden"></div>
+
+<main>
+  <!-- MAP -------------------------------------------------------------------->
+  <section id="view-map" class="view">
+    <div class="toolbar">
+      <label>Civ <select id="map-civ"></select></label>
+      <button id="map-clone" class="btn" title="Start a new civ from this one">+ New civ</button>
+      <button id="map-fit" class="btn ghost">Fit</button>
+      <span class="legend">
+        <i class="lg input"></i>input <i class="lg part"></i>why asked <i class="lg option"></i>play option
+        <i class="lg action"></i>Petra action <i class="lg manager"></i>manager / queue
+        <i class="lg bad"></i>cannot work
+      </span>
+      <span id="map-warn" class="warn-count"></span>
+    </div>
+    <div class="split">
+      <div id="map-cy" class="cy"></div>
+      <aside id="map-detail" class="detail"><p class="muted">Click a node to see where it comes from.</p></aside>
+    </div>
+  </section>
+
+  <!-- GAME (timeline + in->out + map) ---------------------------------------->
+  <section id="view-game" class="view">
+    <div class="toolbar">
+      <label>Run <select id="game-run"></select></label>
+      <label>Kind <select id="game-kind"></select></label>
+      <label class="check" title="Watch the newest run; new questions appear within ~2 s">
+        <input type="checkbox" id="game-live"> Live (newest run)</label>
+      <label class="check"><input type="checkbox" id="game-follow" checked> follow newest question</label>
+      <span id="game-status" class="muted"></span>
+    </div>
+    <div class="split game-split">
+      <div class="timeline-pane">
+        <div class="tl-head">
+          <span>min</span><span>why asked</span><span>options (rule ○, choice ●)</span><span>Petra did</span>
+        </div>
+        <div id="timeline" class="timeline"></div>
+      </div>
+      <div class="right-pane">
+        <div id="game-cy" class="cy mini"></div>
+        <div id="io-panel" class="io-panel"><p class="muted">Pick a question on the left.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MODELS ------------------------------------------------------------------>
+  <section id="view-models" class="view">
+    <div class="toolbar">
+      <label>Question <select id="models-kind"></select></label>
+      <span class="muted">Answers per model &times; Q&amp;A version, across runs. Counts only: no scores.</span>
+    </div>
+    <div id="models-body" class="models-body"></div>
+  </section>
+
+  <!-- EDIT -------------------------------------------------------------------->
+  <section id="view-edit" class="view">
+    <div class="split edit-split">
+      <aside id="edit-files" class="files"></aside>
+      <div class="editor-pane">
+        <div class="toolbar">
+          <strong id="edit-title">Pick a file</strong>
+          <span id="edit-state" class="muted"></span>
+          <span class="spacer"></span>
+          <div class="seg" id="edit-mode">
+            <button data-mode="form" class="on">Form</button><button data-mode="raw">Raw JSON</button>
+          </div>
+          <button id="edit-discard" class="btn ghost" disabled>Discard draft</button>
+          <button id="edit-diff" class="btn" disabled>Diff</button>
+          <button id="edit-apply" class="btn primary" disabled>Apply…</button>
+        </div>
+        <div id="edit-live-note" class="note hidden"></div>
+        <div id="edit-validation" class="validation"></div>
+        <div id="edit-body" class="edit-body"></div>
+      </div>
+      <aside class="history">
+        <h3>History <span class="muted small">(git, this file)</span></h3>
+        <div id="edit-history"></div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg" class="dlg">
+  <form method="dialog" class="dlg-inner">
+    <h2 id="dlg-title"></h2>
+    <div id="dlg-body"></div>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn ghost" id="dlg-cancel">Cancel</button>
+      <button value="ok" class="btn primary" id="dlg-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" class="toast hidden"></div>
+
+<script src="/static/vendor/cytoscape.min.js"></script>
+<script src="/static/js/app.js"></script>
+<script src="/static/js/graph.js"></script>
+<script src="/static/js/mapview.js"></script>
+<script src="/static/js/game.js"></script>
+<script src="/static/js/models.js"></script>
+<script src="/static/js/editor.js"></script>
+<script>Lab.start();</script>
+</body>
+</html>
