@@ -43,6 +43,20 @@ def build(cfg: config.Config, civ: str = "spart") -> dict:
     play_q = ((play_doc.get("data") or {}).get("questions") or {}).get("play") or {}
     criteria = play_q.get("criteria") or {}
     strat_defs = qa.stratagems(cfg)
+    doc_text = cfg.path(config.DOCTRINE_JSON).read_text(encoding="utf-8") \
+        if cfg.path(config.DOCTRINE_JSON).exists() else ""
+    try:
+        _dv, doc_spans = qa.parse_spans(doc_text) if doc_text else (None, {})
+    except (ValueError, IndexError):
+        doc_spans = {}
+
+    def doctrine_line(kind: str) -> int | None:
+        span = doc_spans.get(("stratagems", kind, "orders"))
+        return doc_text.count("\n", 0, span[0]) + 1 if span else None
+
+    def doctrine_source(kind: str) -> dict:
+        return {"path": config.DOCTRINE_JSON, "focus": f"stratagem:{kind}", "line": doctrine_line(kind),
+                "label": f"doctrine.json:{doctrine_line(kind)} stratagems.{kind}.orders"}
 
     nodes, edges, warnings = [], [], []
     ids = set()
@@ -120,12 +134,14 @@ def build(cfg: config.Config, civ: str = "spart") -> dict:
         if not present and pid in ("pass_order", "play_order"):
             continue
         qf = part.get("question_file")
-        node(f"part:{pid}", part["label"], 1, "part", {
-            "title": f"Part: {pid}", "trigger": part["trigger"], "options_text": part["options"],
-            "rule": part["rule"], "who": part["who"], "note": note,
-            "question_file": qa.question_path(qf[:-5]) if qf else None,
-            "anchors": _anchors(facts, part["anchors"] + ["offer", "play_token"])},
-            dim=not present)
+        pdet = {"title": f"Part: {pid}", "trigger": part["trigger"], "options_text": part["options"],
+                "rule": part["rule"], "who": part["who"], "note": note,
+                "question_file": qa.question_path(qf[:-5]) if qf else None,
+                "anchors": _anchors(facts, part["anchors"] + ["offer", "play_token"])}
+        if pid in ("pass_order", "play_order"):
+            pdet["sources"] = [doctrine_source(k["kind"]) for k in
+                               (pass_kinds if pid == "pass_order" else open_kinds)]
+        node(f"part:{pid}", part["label"], 1, "part", pdet, dim=not present)
 
     node("q:play", "play  (play.json)", 2, "question", {
         "title": "The one question: play (source/tools/strategos/questions/play.json)",
@@ -145,7 +161,7 @@ def build(cfg: config.Config, civ: str = "spart") -> dict:
     # -- column 2: options ------------------------------------------------------
     options = []   # (token, part ids, action ids)
 
-    def option(token, parts, actions, extra_summary=None, bad=None):
+    def option(token, parts, actions, extra_summary=None, bad=None, sources=None, label=None):
         text, key = criteria_text(criteria, token)
         summ = [f"criteria ({key or 'none'}): {text if text is not None else 'NO WORDING'}"]
         if text is None:
@@ -154,20 +170,33 @@ def build(cfg: config.Config, civ: str = "spart") -> dict:
             warnings.append(f"play.json has no criteria for option {token!r}")
         if extra_summary:
             summ += extra_summary
-        node(f"opt:{token}", token, 2, "option", {
-            "title": f"Option: {token}", "criteria_key": key, "criteria_text": text,
-            "edit": play_rel, "summary": summ}, parent="q:play", bad=bool(bad))
+        details = {"title": f"Option: {token}", "criteria_key": key, "criteria_text": text,
+                   "edit": play_rel, "summary": summ}
+        if sources:
+            details["sources"] = sources
+        node(f"opt:{token}", label or token, 2, "option", details, parent="q:play", bad=bool(bad))
         options.append((token, parts, actions))
 
     option("economy", [], ["act:economy"], ["Always offered (askPlay adds it last)."])
+    # The military options: each stratagem's order list in doctrine.json (one node per
+    # order, listing every stratagem of this civ that has it).
+    mil: dict[str, dict] = {}
     for s in civ_strats:
         d = strat_defs.get(s["kind"])
         if not d:
             continue
         pid = "part:pass_order" if d.get("needsChoke") else "part:play_order"
         for order in d.get("orders") or []:
-            option(order, [pid], [f"act:{s['kind']}/{order}"],
-                   [f"playbook order of {s['kind']} ({s['why']})"])
+            m = mil.setdefault(order, {"parts": [], "actions": [], "summary": [], "sources": []})
+            if pid not in m["parts"]:
+                m["parts"].append(pid)
+            m["actions"].append(f"act:{s['kind']}/{order}")
+            m["summary"].append(f"playbook order of {s['kind']} ({s['why']}): doctrine.json "
+                                f"stratagems.{s['kind']}.orders, line {doctrine_line(s['kind'])}")
+            m["sources"].append(doctrine_source(s["kind"]))
+    for order, m in mil.items():
+        option(order, m["parts"], m["actions"], m["summary"], sources=m["sources"],
+               label=f"{order}  (doctrine.json)")
     hero_order = (params.get("heroOrder") or {}).get("order") or []
     for t in hero_order:
         tok = "hero:" + qa.hero_option(t)

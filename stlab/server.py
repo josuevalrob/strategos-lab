@@ -73,6 +73,13 @@ class Lab:
             out["civ"] = civ
             out["hero_templates"] = qa.hero_templates_of(self.cfg, civ)
             out["hero_files"] = [h["name"] for h in qa.list_files(self.cfg)["heroes"].get(civ, [])]
+        if kind == "doctrine":
+            play = qa.load_json(self.cfg, qa.question_path("play"), {}) or {}
+            out["stratagem_orders"] = facts.stratagem_orders
+            out["order_routes"] = facts.order_routes
+            out["play_criteria"] = ((play.get("questions") or {}).get("play") or {}).get("criteria") or {}
+            out["used_by"] = editor.stratagem_users(self.cfg)
+            out["note"] = editor.DOCTRINE_NOTE
         if kind == "question":
             known = {k: list(v) for k, v in code.KNOWN_OPTIONS.items()}
             known["play"] = sorted(editor.play_option_universe(self.cfg, facts))

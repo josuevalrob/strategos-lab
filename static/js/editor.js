@@ -36,8 +36,10 @@
   V.onInfo = function (info) {
     var box = document.getElementById("edit-live-note");
     if (!box || !info) return;
-    box.textContent = info.live_note || "";
-    box.classList.toggle("hidden", !info.live_note);
+    var doctrine = V.doc && V.doc.kind === "doctrine";
+    var note = info.live_note ? info.live_note + (doctrine && V.doc.choices ? " " + V.doc.choices.note : "") : "";
+    box.textContent = note;
+    box.classList.toggle("hidden", !note);
   };
 
   /* -- file list ------------------------------------------------------------- */
@@ -60,6 +62,10 @@
     }
     var h = ["<h4>Questions</h4>"];
     f.questions.forEach(function (q) { h.push(item(q.path, q.name + ".json")); });
+    if ((f.doctrine || []).length) {
+      h.push("<h4>Doctrine</h4>");
+      f.doctrine.forEach(function (x) { h.push(item(x.path, "doctrine.json")); });
+    }
     h.push("<h4>Civs</h4>");
     f.civs.forEach(function (c) { h.push(item(c.path, c.civ + ".json")); });
     h.push('<div class="clone"><button class="btn tiny js-clone">+ New civ from…</button></div>');
@@ -96,6 +102,7 @@
       V.render();
       V.loadHistory();
       V.validate();
+      V.onInfo(Lab.info);
     }).catch(function (e) { Lab.toast("Open: " + e.message, true); });
   };
 
@@ -203,6 +210,8 @@
       ta.value = V.text || "";
       ta.addEventListener("input", function () { V.text = ta.value; V.saveDraft(); });
       body.appendChild(ta);
+    } else if (V.doc.kind === "doctrine") {
+      V.doctrineForm(body);
     } else if (V.doc.kind === "question") {
       V.questionForm(body);
     } else if (V.doc.kind === "civ") {
@@ -213,7 +222,7 @@
     V.updateButtons();
     if (V.focus) {
       var row = body.querySelector('[data-key="' + CSS.escape(V.focus) + '"]');
-      if (row) { row.classList.add("focus"); row.scrollIntoView({ block: "center" }); var t = row.querySelector("textarea"); if (t) t.focus(); }
+      if (row) { row.classList.add("focus"); row.scrollIntoView({ block: row.tagName === "FIELDSET" ? "start" : "center" }); var t = row.querySelector(".crit-row textarea, :scope > textarea"); if (t) t.focus(); }
       V.focus = null;
     }
   };
@@ -299,6 +308,80 @@
     wrap.appendChild(err);
     return wrap;
   }
+
+  /* The rest of an object (keys the form does not handle) as JSON, key order kept. */
+  function restBox(obj, handled) {
+    var rest = {};
+    Object.keys(obj).forEach(function (k) { if (handled.indexOf(k) < 0) rest[k] = obj[k]; });
+    return jsonBox(rest, function (v) {
+      var order = Object.keys(obj), cur = {};
+      order.forEach(function (k) { cur[k] = obj[k]; delete obj[k]; });
+      order.forEach(function (k) {
+        if (handled.indexOf(k) >= 0) obj[k] = cur[k];
+        else if (k in v) obj[k] = v[k];
+      });
+      Object.keys(v).forEach(function (k) { if (!(k in obj)) obj[k] = v[k]; });
+      V.saveDraft();
+    });
+  }
+
+  /* doctrine.json: each stratagem's order list = the military play options. */
+  V.doctrineForm = function (body) {
+    var o = V.obj, ch = V.doc.choices || {};
+    var allowedBy = ch.stratagem_orders || {}, routes = ch.order_routes || {}, crit = ch.play_criteria || {};
+    var usedBy = ch.used_by || {};
+    body.appendChild(Lab.el('<div class="note info" style="margin:0 0 14px">' +
+      "Each stratagem's <b>orders</b> are the military options of the play question for a civ (or hero) " +
+      "playing it, in this order. Only orders head.js lets that stratagem issue can be added " +
+      "(STRATAGEM_ORDERS / ORDER_ROUTES). " + Lab.esc(ch.note || "") +
+      " The other sections (live, civs rows, about) are edited in Raw JSON.</div>"));
+    Object.keys(o.stratagems || {}).forEach(function (kind) {
+      var st = o.stratagems[kind];
+      var fs = Lab.el('<fieldset data-key="stratagem:' + Lab.esc(kind) + '"><legend>stratagem: ' + Lab.esc(kind) + "</legend></fieldset>");
+      fs.appendChild(field("played by", Lab.el('<div class="small" style="padding-top:6px">' +
+        ((usedBy[kind] || []).map(Lab.esc).join("<br>") || '<span class="muted">nobody</span>') + "</div>")));
+      st.orders = Array.isArray(st.orders) ? st.orders : [];
+      var list = Lab.el("<div></div>");
+      var allowed = allowedBy[kind];
+      function draw() {
+        list.innerHTML = "";
+        st.orders.forEach(function (ord, i) {
+          var ok = allowed ? allowed.indexOf(ord) >= 0 : false;
+          var row = Lab.el('<div class="order-row"><span class="n">' + (i + 1) + '</span><code>' + Lab.esc(ord) + "</code>" +
+            '<span class="small ' + (ok ? "muted" : "") + '" style="' + (ok ? "" : "color:var(--err)") + '">' +
+            (ok ? "&rarr; " + Lab.esc((routes[ord] || []).join(", ") || "no manager") +
+              (crit[ord] ? " · reads: “" + Lab.esc(crit[ord]) + "”" : " · <b>no wording in play.json</b>") :
+              "head.js does not let " + Lab.esc(kind) + " issue this order") + "</span>" +
+            '<span class="mini-btns"><button class="btn tiny" title="earlier">↑</button><button class="btn tiny danger" title="remove">✕</button></span></div>');
+          var b = row.querySelectorAll("button");
+          b[0].addEventListener("click", function (e) { e.preventDefault(); if (i > 0) { var x = st.orders[i]; st.orders[i] = st.orders[i - 1]; st.orders[i - 1] = x; draw(); V.saveDraft(); } });
+          b[1].addEventListener("click", function (e) { e.preventDefault(); st.orders.splice(i, 1); draw(); V.saveDraft(); });
+          list.appendChild(row);
+        });
+        var free = (allowed || []).filter(function (x) { return st.orders.indexOf(x) < 0; });
+        var add = Lab.el('<div class="order-row"><span></span><select class="mono"></select><span class="small muted">' +
+          (allowed ? "head.js lets " + Lab.esc(kind) + " issue: " + Lab.esc(allowed.join(", ")) : "head.js has no stratagem " + Lab.esc(kind)) +
+          '</span><button class="btn tiny">+ add</button></div>');
+        add.querySelector("select").innerHTML = free.map(function (x) { return "<option>" + Lab.esc(x) + "</option>"; }).join("");
+        add.querySelector("select").disabled = add.querySelector("button").disabled = !free.length;
+        add.querySelector("button").addEventListener("click", function (e) {
+          e.preventDefault();
+          var v = add.querySelector("select").value;
+          if (v && st.orders.indexOf(v) < 0) { st.orders.push(v); draw(); V.saveDraft(); }
+        });
+        list.appendChild(add);
+      }
+      draw();
+      fs.appendChild(field("orders", list, "The options offered for this stratagem (strike only when something could reach the choke)."));
+      if ("needsChoke" in st) {
+        var cb = Lab.el('<label class="check"><input type="checkbox"' + (st.needsChoke ? " checked" : "") + "> needs a pass (asked as pass_order; else play_order)</label>");
+        cb.querySelector("input").addEventListener("change", function (e) { st.needsChoke = e.target.checked; V.saveDraft(); });
+        fs.appendChild(field("needsChoke", cb));
+      }
+      fs.appendChild(field("params, rule …", restBox(st, ["orders", "needsChoke"])));
+      body.appendChild(fs);
+    });
+  };
 
   V.questionForm = function (body) {
     var o = V.obj, ch = V.doc.choices || {};

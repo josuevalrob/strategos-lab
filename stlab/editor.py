@@ -231,6 +231,97 @@ def validate_hero(cfg, facts, rel: str, obj) -> tuple[list, list]:
     return errors, warnings
 
 
+DOCTRINE_NOTE = ("doctrine.json is read once by head.js at game start (Engine.ReadJSONFile): a "
+                 "running game keeps what it read, so an edit reaches the next game. The advisor's "
+                 "qa_snapshot (lab L3) does not copy it, so a run's log records only the commit "
+                 "(qa.commit / mod_sha), not whether doctrine.json had uncommitted changes then.")
+
+
+def stratagem_users(cfg: config.Config, doctrine_obj: dict | None = None) -> dict:
+    """Stratagem -> who plays it: civ files, hero files, doctrine.json civ rows."""
+    users: dict[str, list] = {}
+
+    def add(kind, who):
+        if isinstance(kind, str) and kind:
+            users.setdefault(kind, []).append(who)
+
+    files = qa.list_files(cfg)
+    for c in files["civs"]:
+        d = qa.load_json(cfg, c["path"], {}) or {}
+        heroes = [{"name": h["name"], "data": qa.load_json(cfg, h["path"], {}) or {}}
+                  for h in files["heroes"].get(c["civ"], [])]
+        for st in qa.civ_stratagems(d, heroes):
+            add(st["kind"], f"{c['civ']}: {st['why']}")
+    table = doctrine_obj if doctrine_obj is not None else qa.doctrine(cfg)
+    scripted = {c["civ"] for c in files["civs"]}
+    for civ, row in ((table or {}).get("civs") or {}).items():
+        if civ in scripted or not isinstance(row, dict):
+            continue      # a civ with a script takes its row from the script
+        for key in ("doctrine", "withoutChoke", "underPressure"):
+            add(row.get(key), f"{civ} (doctrine.json row): {key}")
+        for h in row.get("heroes") or []:
+            if isinstance(h, dict):
+                add(h.get("playbook"), f"{civ} (doctrine.json row): hero {h.get('hero')}")
+                add((h.get("ground") or {}).get("withoutChoke"), f"{civ}: hero {h.get('hero')} ground")
+    return users
+
+
+def validate_doctrine(cfg, facts, rel: str, obj) -> tuple[list, list]:
+    """The stratagems' order lists ARE the military play options: every order must be one
+    head.js lets that stratagem issue (STRATAGEM_ORDERS) and routes (ORDER_ROUTES)."""
+    errors, warnings = [], []
+    if not isinstance(obj, dict):
+        return ["doctrine.json must be a JSON object"], []
+    strats = obj.get("stratagems")
+    if not isinstance(strats, dict) or not strats:
+        return ["'stratagems' must be an object with at least one stratagem"], []
+    play = qa.load_json(cfg, qa.question_path("play"), {}) or {}
+    crit = ((play.get("questions") or {}).get("play") or {}).get("criteria") or {}
+    users = stratagem_users(cfg, obj)
+    # Only civs with a script ask the play question: their stratagems need play.json wording.
+    scripted = {k for k, who in users.items() if any("(doctrine.json row)" not in w for w in who)}
+    for kind, d in strats.items():
+        if not isinstance(d, dict):
+            errors.append(f"stratagem {kind!r} must be an object")
+            continue
+        orders = d.get("orders")
+        if not isinstance(orders, list) or not all(isinstance(o, str) for o in orders):
+            errors.append(f"{kind}: 'orders' must be a list of order names")
+            continue
+        allowed = facts.stratagem_orders.get(kind)
+        if allowed is None:
+            errors.append(f"{kind}: head.js has no stratagem {kind!r} (STRATAGEM_ORDERS): "
+                          "every hint for it is ignored")
+        for o in orders:
+            routes = facts.order_routes.get(o)
+            if routes is None:
+                errors.append(f"{kind}: order {o!r} does not exist (no ORDER_ROUTES entry in head.js)")
+            elif allowed is not None and o not in allowed:
+                errors.append(f"{kind}: head.js does not let {kind} issue {o!r} "
+                              f"(STRATAGEM_ORDERS[{kind!r}] = {allowed})")
+            elif not routes and o not in facts.managerless:
+                errors.append(f"{kind}: order {o!r} routes to no Petra manager")
+        dup = sorted({o for o in orders if orders.count(o) > 1})
+        if dup:
+            errors.append(f"{kind}: order(s) listed twice: {', '.join(dup)}")
+        if "needsChoke" in d and not isinstance(d["needsChoke"], bool):
+            errors.append(f"{kind}: needsChoke must be true or false")
+        for key in ("params", "rule", "trigger", "force", "ground", "breakoff"):
+            if key in d and not isinstance(d[key], dict):
+                errors.append(f"{kind}: {key} must be an object")
+        if not orders:
+            warnings.append(f"{kind}: no orders: a civ playing it is offered only economy")
+        missing = [o for o in orders if o not in crit and o in facts.order_routes]
+        if missing and kind in scripted:
+            warnings.append(f"{kind}: play.json has no wording for {', '.join(missing)}: a turn "
+                            "that offers it gets a generic question")
+    for kind, who in sorted(users.items()):
+        if kind not in strats:
+            errors.append(f"stratagem {kind!r} is played by {'; '.join(who)} but is not in "
+                          "'stratagems' any more")
+    return errors, warnings
+
+
 def validate(cfg, facts, rel: str, text: str, pending: set | None = None) -> dict:
     """``{errors, warnings, data}`` for one file's new text."""
     if not config.is_qa_path(rel):
@@ -241,7 +332,9 @@ def validate(cfg, facts, rel: str, text: str, pending: set | None = None) -> dic
     except json.JSONDecodeError as exc:
         return {"errors": [f"invalid JSON: {exc}"], "warnings": [], "data": None}
     kind = config.qa_kind(rel)
-    if kind == "question":
+    if kind == "doctrine":
+        errors, warnings = validate_doctrine(cfg, facts, rel, obj)
+    elif kind == "question":
         errors, warnings = validate_question(cfg, facts, rel, obj)
     elif kind == "civ":
         errors, warnings = validate_civ(cfg, facts, rel, obj, pending or set())
@@ -369,6 +462,8 @@ def apply(cfg: config.Config, facts, changes: list[dict], summary: str,
            "warnings": warnings, "unchanged": unchanged, "dirty_before": dirty}
     if live_runs:
         out["live_note"] = live_note(cfg, live_runs, pinned_of(cfg, live_runs))
+        if config.DOCTRINE_JSON in paths:
+            out["live_note"] += " " + DOCTRINE_NOTE
     return out
 
 

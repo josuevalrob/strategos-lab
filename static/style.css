@@ -237,6 +237,9 @@ legend { padding: 0 6px; color: var(--muted); font-size: 12.5px; font-weight: 60
 .row > .grow { flex: 1; min-width: 0; }
 .crit-row { display: grid; grid-template-columns: 170px 1fr auto; gap: 8px; margin: 6px 0; align-items: start; }
 .crit-row.focus textarea, .crit-row.focus input { outline: 2px solid var(--hl); }
+fieldset.focus { outline: 2px solid var(--hl); outline-offset: 2px; }
+.order-row { display: grid; grid-template-columns: 26px 150px 1fr auto; gap: 8px; margin: 5px 0; align-items: center; font-size: 13px; }
+.order-row .n { color: var(--muted); text-align: right; font-size: 12px; }
 .line-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; margin: 6px 0; align-items: start; }
 .line-row .n { color: var(--muted); padding-top: 6px; text-align: right; font-size: 12px; }
 .mini-btns { display: flex; gap: 3px; }

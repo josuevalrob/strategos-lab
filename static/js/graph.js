@@ -243,8 +243,15 @@
         d.text_lines.map(function (s) { return "<li>" + Lab.esc(s) + "</li>"; }).join("") + "</ol>");
     }
     if (d.error) h.push('<p class="pill err">' + Lab.esc(d.error) + "</p>");
+    if (d.sources && d.sources.length) {
+      h.push('<p class="muted">Comes from (the order list is the option list):</p><div class="anchors">' +
+        d.sources.map(function (src, i) {
+          return '<button class="btn tiny js-src" data-i="' + i + '">Edit ' + Lab.esc(src.label) + "</button>";
+        }).join("") + "</div>");
+    }
     var edit = d.edit || d.question_file;
-    if (d.edit) h.push('<p><button class="btn primary js-edit">Edit ' + Lab.esc(edit.split("/").pop()) + "</button></p>");
+    if (d.edit) h.push('<p><button class="btn primary js-edit">Edit ' + Lab.esc(edit.split("/").pop()) +
+      (d.sources ? " (wording)" : "") + "</button></p>");
     else if (d.question_file) h.push('<p><button class="btn js-edit">Edit ' + Lab.esc(edit.split("/").pop()) +
       '</button> <span class="small muted">its own question: used only when this part is asked on its own, not inside play (play.json words the options)</span></p>');
     if (d.anchors && d.anchors.length) {
@@ -255,6 +262,12 @@
         }).join("") + '</div><div class="js-snippet"></div>');
     }
     box.innerHTML = h.join("");
+    box.querySelectorAll(".js-src").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var src = d.sources[+b.dataset.i];
+        Lab.show("edit", { path: src.path, focus: src.focus });
+      });
+    });
     var btn = box.querySelector(".js-edit");
     if (btn) btn.addEventListener("click", function () {
       Lab.show("edit", { path: edit, focus: d.criteria_key || null });

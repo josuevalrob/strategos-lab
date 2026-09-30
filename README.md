@@ -71,12 +71,25 @@ across every run found. Counts only — no win rates, no scores. Example: pick
 - civs: `binaries/data/mods/strategos/simulation/data/strategos/civs/<civ>.json`
   (name, text lines, heroes in prompt order, playbook = `params.doctrine` /
   `params.withoutChoke` which decide the military options, the hero order, other params);
-- heroes: `…/heroes/<civ>/<name>.json` (name, battle, templates, text, playbook, params).
+- heroes: `…/heroes/<civ>/<name>.json` (name, battle, templates, text, playbook, params);
+- doctrine: `…/strategos/doctrine.json` — each stratagem's **orders** list IS the list of
+  military play options (hold / strike / fallback, fortify / garrison / standdown …) for a
+  civ or hero playing it, in that order. The form lists who plays each stratagem, lets you
+  remove, reorder and re-add orders (only the ones head.js lets that stratagem issue),
+  set needsChoke, and edit params / rule as JSON; `live`, the `civs` rows and `about` are
+  edited in Raw JSON. doctrine.json is hand-formatted, so the lab rewrites only the values
+  you changed (dropping `strike` is a one-line diff).
+
+On the Map, every military option is labelled `(doctrine.json)`; its panel names the
+exact place (`doctrine.json:38 stratagems.hold-the-pass.orders`) with a button that opens
+that stratagem in the editor. The wording the model reads stays in `play.json`.
 
 Form or **Raw JSON**. Edits are a *draft* (kept in this browser until applied or
 discarded). Validation runs as you type and only removes the impossible: invalid JSON,
 an option the game never offers, a hero with no file or no template, a stratagem that is
-not in `doctrine.json` or that head.js cannot dispatch. It never picks. A problem the
+not in `doctrine.json` or that head.js cannot dispatch, an order that head.js does not let
+that stratagem issue (`STRATAGEM_ORDERS`) or that does not exist (`ORDER_ROUTES`), a
+stratagem removed while a civ or hero still plays it. It never picks. A problem the
 committed file already had is a warning, not a refusal. **Diff** shows draft vs disk.
 
 ## Where edits go (Apply)
@@ -94,6 +107,8 @@ repo with the message `Strategos lab: <your summary>`:
 A game that is running keeps the Q&A files it started with when its log header has a
 `qa` snapshot (lab L3): the note in Edit says the edit reaches the next game. For an
 older advisor the note warns that its next prompt may already use the edit.
+`doctrine.json` is read once by head.js at game start, so a running game keeps what it
+read; the note says so when you edit it.
 
 ## History and restore
 
@@ -126,7 +141,8 @@ option in `play.json` and in the 12c-2 live log; the timeline of the real 12c-2 
 run (114 play rows, 3 rows checked against raw log lines); the L3 contract (the real
 `lab-l3-jev-live` run and a synthetic one); old-run prompt rebuild (length = `meta.chars`,
 Jev, Laya and the `script` prompt variant); models grouping; editor apply / refusals /
-history / diff / restore, clone, and "the next game's header shows the new commit"; live
+history / diff / restore, doctrine.json (order validation, one-line diffs, map links,
+not in qa_snapshot), clone, and "the next game's header shows the new commit"; live
 tail with a fake game writing partial lines; an HTTP smoke test of every endpoint against
 lab.py started as a process; `node --check` on every JS file.
 
@@ -143,7 +159,7 @@ stlab/code.py       head.js parsers + the hand-kept parts/actions table with anc
 stlab/mapgraph.py   L1 map
 stlab/runs.py       L2/L6 runs, advisor log + engine.log join, incremental tail
 stlab/prompts.py    L4 exact / rebuilt prompts
-stlab/editor.py     L5 validation, apply, history, diff, restore
+stlab/editor.py     L5 validation (incl. doctrine.json), apply, history, diff, restore
 stlab/clone.py      L8 clone a civ
 stlab/models.py     L7 models over time
 stlab/server.py     HTTP server + JSON API
@@ -163,8 +179,14 @@ tests/              unittest suite + fixture builder
 - "Which lines drove the answer" (leave-one-line-out, `why_attrib.py`) is not in the lab:
   it needs model calls.
 - Follow-up questions (answer → next question) are not built (PLAN: later).
-- The stratagems' order lists live in `doctrine.json`, which the editor does not edit;
-  the civ / hero files choose the stratagem.
+- `doctrine.json` is **not** in the advisor's `qa_snapshot` (lab L3 copies `questions/`,
+  `civs/`, `heroes/` only; checked on `lab-l3-jev-live` and by a test). A run's log
+  records the commit (`qa.commit` / `mod_sha`), and `qa.dirty` covers only the snapshot
+  files, so uncommitted doctrine.json changes at game start are not visible afterwards.
+  The game reads doctrine.json once at start (head.js), so a mid-game edit does not
+  reach the running game either way.
+- The doctrine form covers the stratagems; `live`, the `civs` rows (civs without a
+  script) and `about` are Raw JSON only.
 - Known options of the non-play question files are a hand-kept list
   (`stlab/code.py KNOWN_OPTIONS`).
 - "Live" = a run without `summary.json` written in the last 120 s; polling every 2 s.

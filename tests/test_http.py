@@ -115,6 +115,16 @@ class HttpSmokeTest(unittest.TestCase):
         self.assertEqual(f["validation"]["errors"], [])
         self.assertIn("play", f["choices"]["known_options"])
         self.get("/api/file?path=unrelated.txt", status=400)
+        dj = self.get("/api/file?path=" + config.DOCTRINE_JSON)
+        self.assertEqual(dj["kind"], "doctrine")
+        self.assertEqual(dj["validation"]["errors"], [])
+        self.assertEqual(dj["choices"]["stratagem_orders"]["hold-the-pass"], ["hold", "strike", "fallback"])
+        self.assertIn("qa_snapshot", dj["choices"]["note"])
+        bad = json.loads(dj["text"])
+        bad["stratagems"]["hold-the-pass"]["orders"].append("trade")
+        self.assertTrue(self.post("/api/validate", {"path": config.DOCTRINE_JSON, "data": bad})["errors"])
+        self.assertEqual(self.post("/api/format", {"path": config.DOCTRINE_JSON, "data": json.loads(dj["text"])})["text"],
+                         dj["text"])
         m = self.get("/api/map?civ=spart")
         self.assertGreater(len(m["nodes"]), 40)
         line = [n for n in m["nodes"] if n["id"] == "part:hero_next"][0]["details"]["anchors"][0]["line"]

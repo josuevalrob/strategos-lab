@@ -17,8 +17,10 @@ def sha256(data: bytes | str) -> str:
 
 
 def list_files(cfg: config.Config) -> dict:
-    """``{"civs": [...], "heroes": {civ: [...]}, "questions": [...]}`` (repo-relative)."""
-    out = {"civs": [], "heroes": {}, "questions": []}
+    """``{"civs", "heroes": {civ: [...]}, "questions", "doctrine"}`` (repo-relative)."""
+    out = {"civs": [], "heroes": {}, "questions": [],
+           "doctrine": [{"name": "doctrine", "path": config.DOCTRINE_JSON}]
+           if cfg.path(config.DOCTRINE_JSON).exists() else []}
     civs = cfg.path(config.CIVS_DIR)
     for p in sorted(civs.glob("*.json")) if civs.exists() else []:
         out["civs"].append({"civ": p.stem, "path": f"{config.CIVS_DIR}/{p.name}"})
@@ -94,13 +96,146 @@ def keep_number_types(new, old):
 
 
 def dump_data(obj, original: str | None = None, style: dict | None = None) -> str:
-    """Client data -> file text in the file's style, numbers kept as the file had them."""
-    if original:
-        try:
-            obj = keep_number_types(obj, json.loads(original))
-        except json.JSONDecodeError:
-            pass
-    return dump_like(obj, original, style)
+    """Client data -> file text in the file's style, numbers kept as the file had them.
+
+    A file that a plain ``json.dumps`` reproduces byte for byte is re-dumped; a
+    hand-formatted one (doctrine.json: inline arrays, blank lines) is PATCHED:
+    only the values that changed are rewritten, everything else stays as typed."""
+    if not original:
+        return dump_like(obj, original, style)
+    try:
+        old = json.loads(original)
+    except json.JSONDecodeError:
+        return dump_like(obj, original, style)
+    obj = keep_number_types(obj, old)
+    if dump_like(old, original) == original:
+        return dump_like(obj, original, style)
+    return patch_text(original, obj)
+
+
+# -- minimal-diff writing of hand-formatted JSON ---------------------------------
+
+_WS = " \t\n\r"
+_NUM = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def parse_spans(text: str) -> tuple[object, dict]:
+    """``(value, {path tuple: (start, end)})``: where every value sits in the text."""
+    spans: dict = {}
+
+    def ws(i):
+        while i < len(text) and text[i] in _WS:
+            i += 1
+        return i
+
+    def value(i, path):
+        i = ws(i)
+        start = i
+        c = text[i]
+        if c == "{":
+            out, i = {}, ws(i + 1)
+            if text[i] == "}":
+                i += 1
+            else:
+                while True:
+                    i = ws(i)
+                    key, i = json.decoder.scanstring(text, i + 1)
+                    i = ws(i)
+                    if text[i] != ":":
+                        raise ValueError(f"':' expected at {i}")
+                    out[key], i = value(i + 1, path + (key,))
+                    i = ws(i)
+                    if text[i] == ",":
+                        i += 1
+                        continue
+                    if text[i] != "}":
+                        raise ValueError(f"'}}' expected at {i}")
+                    i += 1
+                    break
+        elif c == "[":
+            out, i = [], ws(i + 1)
+            if text[i] == "]":
+                i += 1
+            else:
+                while True:
+                    v, i = value(i, path + (len(out),))
+                    out.append(v)
+                    i = ws(i)
+                    if text[i] == ",":
+                        i += 1
+                        continue
+                    if text[i] != "]":
+                        raise ValueError(f"']' expected at {i}")
+                    i += 1
+                    break
+        elif c == '"':
+            out, i = json.decoder.scanstring(text, i + 1)
+        elif text.startswith("true", i):
+            out, i = True, i + 4
+        elif text.startswith("false", i):
+            out, i = False, i + 5
+        elif text.startswith("null", i):
+            out, i = None, i + 4
+        else:
+            m = _NUM.match(text, i)
+            if not m:
+                raise ValueError(f"unexpected {c!r} at {i}")
+            out, i = json.loads(m.group(0)), m.end()
+        spans[path] = (start, i)
+        return out, i
+
+    val, end = value(0, ())
+    if text[ws(end):].strip():
+        raise ValueError("trailing data")
+    return val, spans
+
+
+def line_of(text: str, path: tuple) -> int | None:
+    """1-based line of the value at ``path`` (None when it is not there)."""
+    try:
+        _v, spans = parse_spans(text)
+    except (ValueError, IndexError):
+        return None
+    if path not in spans:
+        return None
+    return text.count("\n", 0, spans[path][0]) + 1
+
+
+def patch_text(text: str, new) -> str:
+    """``text`` with only the values that differ from ``new`` rewritten.  An object whose
+    keys (or key order) changed is rewritten whole."""
+    old, spans = parse_spans(text)
+    unit = style_of(text)["indent"]
+    edits = []
+
+    def same(a, b):
+        return json.dumps(a, sort_keys=False) == json.dumps(b, sort_keys=False)
+
+    def walk(path, o, n):
+        if same(o, n):
+            return
+        if isinstance(o, dict) and isinstance(n, dict) and list(o) == list(n):
+            for k in o:
+                walk(path + (k,), o[k], n[k])
+            return
+        if isinstance(o, list) and isinstance(n, list) and len(o) == len(n) and \
+                any(isinstance(x, (dict, list)) for x in o):
+            for i, (a, b) in enumerate(zip(o, n)):
+                walk(path + (i,), a, b)
+            return
+        edits.append((spans[path], n))
+
+    walk((), old, new)
+    for (start, end), n in sorted(edits, key=lambda e: -e[0][0]):
+        was = text[start:end]
+        if "\n" not in was:
+            rep = json.dumps(n, ensure_ascii=False)
+        else:
+            line_start = text.rfind("\n", 0, start) + 1
+            indent = re.match(r"[ \t]*", text[line_start:]).group(0)
+            rep = json.dumps(n, indent=unit, ensure_ascii=False).replace("\n", "\n" + indent)
+        text = text[:start] + rep + text[end:]
+    return text
 
 
 def dump_like(obj, original: str | None = None, style: dict | None = None) -> str:

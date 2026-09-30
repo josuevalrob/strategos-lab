@@ -45,13 +45,15 @@ CIV_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{1,15}$")
 
 
 def is_qa_path(rel: str) -> bool:
-    """True for a repo-relative Q&A file path (question spec, civ file, hero file)."""
+    """True for a repo-relative Q&A file path (question spec, civ file, hero file, doctrine.json)."""
     if not isinstance(rel, str) or ".." in rel or rel.startswith("/"):
         return False
-    return any(p.match(rel) for p in _QA_PATTERNS)
+    return rel == DOCTRINE_JSON or any(p.match(rel) for p in _QA_PATTERNS)
 
 
 def qa_kind(rel: str) -> str | None:
+    if rel == DOCTRINE_JSON:
+        return "doctrine"
     if rel.startswith(QUESTIONS_DIR + "/"):
         return "question"
     if rel.startswith(CIVS_DIR + "/"):
