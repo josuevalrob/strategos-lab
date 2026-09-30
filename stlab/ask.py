@@ -35,7 +35,7 @@ print(json.dumps(out, default=str))
 LAYA_SCRIPT = r'''
 import json, sys, time
 sys.path.insert(0, sys.argv[1])
-from model_client import ModelClient, context_for
+from model_client import ModelClient
 import advisor_adapters as A
 c = ModelClient(timeout=120.0)
 c.load()
@@ -44,8 +44,8 @@ for line in sys.stdin:
     req = json.loads(line)
     t0 = time.perf_counter()
     try:
-        spec, qid, questions = A.question_spec(req["kind"], list(req["options"]))
-        res = c.agent.predict(context_for(spec, req["prompt"]), questions)
+        questions = req.get("questions") or A.question_spec(req["kind"], list(req["options"]))[2]
+        res = c.agent.predict(req["prompt"], questions)
         out = {"ok": True, "answers": c._validate(res, questions), "raw": json.dumps(res, default=str),
                "model": f"{c.repo}/{c.subfolder}"}
     except Exception as exc:
@@ -108,11 +108,11 @@ class Asker:
         self.laya_info = json.loads(first)
         return self.laya
 
-    def laya_ask(self, prompt: str, kind: str, options: list) -> dict:
+    def laya_ask(self, prompt: str, kind: str, options: list, questions: dict | None) -> dict:
         with self.laya_lock:
             try:
                 proc = self._laya_proc()
-                proc.stdin.write(json.dumps({"prompt": prompt, "kind": kind, "options": options}) + "\n")
+                proc.stdin.write(json.dumps({"prompt": prompt, "kind": kind, "options": options, "questions": questions}) + "\n")
                 proc.stdin.flush()
                 out = self._parse(proc.stdout.readline(), "")
             except Exception as exc:  # noqa: BLE001
@@ -135,18 +135,19 @@ class Asker:
         return out
 
     # -- entry point ------------------------------------------------------------
-    def ask(self, model: str, res: dict) -> dict:
+    def ask(self, model: str, res: dict, prompt: str | None = None, questions: dict | None = None) -> dict:
+        """Same prompt + questions to either model; ``prompt`` / ``questions`` override the logged ones."""
         io, e = res.get("io") or {}, res.get("entry") or {}
-        prompt = io.get("prompt")
+        prompt = prompt or io.get("prompt")
         if not prompt:
             return {"ok": False, "error": "this question has no prompt to send"}
+        qs = questions or _questions(io.get("request"))
         if model == "jev":
-            qs = _questions(io.get("request"))
             if not qs:
                 return {"ok": False, "error": "no question spec in the request"}
             out = self.jev(prompt, qs)
         elif model == "laya":
-            out = self.laya_ask(prompt, e.get("kind"), list(e.get("options") or []))
+            out = self.laya_ask(prompt, e.get("kind"), list(e.get("options") or []), qs)
         else:
             return {"ok": False, "error": f"unknown model {model!r}"}
         out["asked"] = model

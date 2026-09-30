@@ -163,7 +163,9 @@ class Lab:
     # -- POST ---------------------------------------------------------------
     def p_ask(self, body):
         res = self.question({"run": [str(body.get("run") or "")], "idx": [str(body.get("idx"))]})
-        return ask_ok(self.asker.ask(str(body.get("model")), res))
+        qs = body.get("questions")
+        return ask_ok(self.asker.ask(str(body.get("model")), res, body.get("prompt") or None,
+                                     qs if isinstance(qs, dict) else None))
 
     def p_validate(self, body):
         rel = body.get("path")

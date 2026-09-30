@@ -276,3 +276,4 @@ pre.diff .hunk { color: var(--accent); display: block; }
 /* Ask Jev + Laya tab: two answers side by side */
 .ask-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ask-card { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--node-fill); min-width: 0; }
+.play-ta { width: 100%; box-sizing: border-box; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg, var(--node-fill)); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 2px 0 8px; resize: vertical; }

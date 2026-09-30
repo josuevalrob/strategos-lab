@@ -286,15 +286,33 @@
     return JSON.stringify(v, null, 2);
   }
 
-  /* Ask Jev and Laya this same prompt again, both at once; answers side by side,
-     next to what was logged.  Results are kept per question while the page is open. */
+  /* Playground: edit the prompt and the question, ask Jev and Laya at once, answers side
+     by side next to what was logged.  Drafts + answers are kept per question while the page is open. */
   V.askCache = {};
-  V.askTab = function (e, out) {
+  function questionsOf(req) {
+    if (!req || typeof req !== "object") return null;
+    return req.questions || (req.response_format && req.response_format.questions) || null;
+  }
+  V.askTab = function (e, io, out) {
     var key = V.run + "#" + V.selected;
-    out.innerHTML = '<p><button class="btn js-ask-both">Ask Jev + Laya</button> ' +
-      '<span class="muted small">same prompt, both models at once · logged choice: <code>' + Lab.esc(e.choice || "no answer") + "</code>" +
-      " · first Laya ask loads the model (~40 s)</span></p>" +
+    var orig = { prompt: io.prompt || "", questions: JSON.stringify(questionsOf(io.request) || {}, null, 2) };
+    var c = V.askCache[key] = V.askCache[key] || { draft: { prompt: orig.prompt, questions: orig.questions } };
+    out.innerHTML =
+      '<p class="small muted">Edit the prompt and/or the question, then ask. Logged choice: <code>' + Lab.esc(e.choice || "no answer") +
+      '</code>. Nothing here is saved to files. First Laya ask loads the model (~40 s).</p>' +
+      '<label class="small muted">Prompt <span class="js-ed-p"></span></label><textarea class="play-ta js-p" rows="14" spellcheck="false"></textarea>' +
+      '<label class="small muted">Question (instructions, options + criteria) <span class="js-ed-q"></span></label><textarea class="play-ta js-q" rows="10" spellcheck="false"></textarea>' +
+      '<p><button class="btn js-ask-both">Ask Jev + Laya</button> <button class="btn tiny js-reset">Reset to logged</button> <span class="js-err"></span></p>' +
       '<div class="ask-grid"><div class="js-ask-jev"></div><div class="js-ask-laya"></div></div>';
+    var ta = out.querySelector(".js-p"), tq = out.querySelector(".js-q");
+    ta.value = c.draft.prompt; tq.value = c.draft.questions;
+    function marks() {
+      out.querySelector(".js-ed-p").innerHTML = ta.value !== orig.prompt ? '<span class="pill warn">edited</span>' : "";
+      out.querySelector(".js-ed-q").innerHTML = tq.value !== orig.questions ? '<span class="pill warn">edited</span>' : "";
+    }
+    ta.addEventListener("input", function () { c.draft.prompt = ta.value; marks(); });
+    tq.addEventListener("input", function () { c.draft.questions = tq.value; marks(); });
+    marks();
     function card(model, st) {
       var name = model === "jev" ? "Jev" : "Laya", el = out.querySelector(".js-ask-" + model);
       if (!el) return;
@@ -311,20 +329,27 @@
       var same = r.choice === e.choice;
       el.innerHTML = '<div class="ask-card"><b>' + name + ":</b> <code>" + Lab.esc(r.choice) + "</code> " +
         '<span class="pill ' + (same ? "ok" : "warn") + '">' + (same ? "same as logged" : "differs from logged") + "</span>" +
+        (st.edited ? ' <span class="pill">with your edits</span>' : "") +
         '<div class="muted small">' + Lab.esc(r.model || "") + " · " + r.ms + " ms" + (r.load_s ? " · model load " + r.load_s + " s" : "") + "</div>" +
         (bars ? '<div class="probs">' + bars + "</div>" : "") +
         '<details><summary class="small muted">raw reply</summary><pre class="block">' + Lab.esc(r.raw || "") + "</pre></details></div>";
     }
-    function draw() { var c = V.askCache[key] || {}; card("jev", c.jev); card("laya", c.laya); }
+    function draw() { card("jev", c.jev); card("laya", c.laya); }
     draw();
+    out.querySelector(".js-reset").addEventListener("click", function () {
+      ta.value = c.draft.prompt = orig.prompt; tq.value = c.draft.questions = orig.questions; marks();
+    });
     out.querySelector(".js-ask-both").addEventListener("click", function () {
-      var c = V.askCache[key] = {};
+      var err = out.querySelector(".js-err"), qs;
+      err.innerHTML = "";
+      try { qs = JSON.parse(tq.value); } catch (x) { err.innerHTML = '<span class="pill err">Question is not valid JSON: ' + Lab.esc(x.message) + "</span>"; return; }
+      var edited = ta.value !== orig.prompt || tq.value !== orig.questions;
       ["jev", "laya"].forEach(function (model) {
         c[model] = { pending: true };
-        Lab.post("/api/ask", { run: V.run, idx: V.selected, model: model }).then(function (res) {
-          c[model] = { r: res.result };
-        }).catch(function (err) {
-          c[model] = { r: { ok: false, error: err.message } };
+        Lab.post("/api/ask", { run: V.run, idx: V.selected, model: model, prompt: ta.value, questions: qs }).then(function (res) {
+          c[model] = { r: res.result, edited: edited };
+        }).catch(function (x) {
+          c[model] = { r: { ok: false, error: x.message } };
         }).then(function () { if (V.run + "#" + V.selected === key && V.ioTab === "ask") card(model, c[model]); });
       });
       draw();
@@ -363,7 +388,7 @@
       '<dt>Logged at</dt><dd class="small muted">advisor/' + Lab.esc(e.source.file) + ":" + Lab.esc(e.source.line) + "</dd></dl>");
     h.push(probHtml);
     h.push('<div class="io-tabs">' + ["prompt", "request", "reply", "petra", "ask"].map(function (t) {
-      var label = { prompt: "Prompt", request: "Request", reply: "Raw reply", petra: "Petra (engine.log)", ask: "Ask Jev + Laya" }[t];
+      var label = { prompt: "Prompt", request: "Request", reply: "Raw reply", petra: "Petra (engine.log)", ask: "Try it (edit + ask)" }[t];
       return '<button data-t="' + t + '"' + (t === V.ioTab ? ' class="on"' : "") + ">" + label + "</button>";
     }).join("") + '</div><div class="js-io"></div>');
     var panel = document.getElementById("io-panel");
@@ -377,7 +402,7 @@
       var out = panel.querySelector(".js-io");
       var notes = (io.notes || []).length ? '<ul class="small muted">' + io.notes.map(function (n) { return "<li>" + Lab.esc(n) + "</li>"; }).join("") + "</ul>" : "";
       if (t === "ask") {
-        V.askTab(e, out);
+        V.askTab(e, io, out);
       } else if (t === "prompt") {
         out.innerHTML = notes + (io.ok === false ? '<p class="pill err">' + Lab.esc(io.error) + "</p>" : "") +
           '<pre class="block">' + Lab.esc(io.prompt || "(no prompt)") + "</pre>";
