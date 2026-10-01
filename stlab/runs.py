@@ -410,7 +410,9 @@ class RunModel:
             "game": {
                 "asked": asked, "settled": settled,
                 "choice": game_choice, "by": settled["by"] if settled else None,
-                "applied": applied_summary(eng, game_choice, kind),
+                "applied": ({"state": "logged", "text": "answer only logged: nothing changes in the game yet",
+                             "order": None, "managers": []} if row.get("outcome") == "logged" and not eng
+                            else applied_summary(eng, game_choice, kind)),
                 "lines": (eng or {}).get("applied", [])[:12],
             },
         }
