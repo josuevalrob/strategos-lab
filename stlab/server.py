@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ask, clone, code, config, editor, gitops, map3d, mapgraph, models, prompts, qa, runs
+from . import ask, stats, clone, code, config, editor, gitops, map3d, mapgraph, models, prompts, qa, runs
 
 STATIC = config.LAB_ROOT / "static"
 
@@ -126,6 +126,10 @@ class Lab:
     def live(self, q):
         return self.timeline(q)
 
+    def economy(self, q):
+        m = self._run(q)
+        return {"run": m.info(self.cfg.live_window_s), **m.economy()}
+
     def question(self, q):
         m = self._run(q)
         idx = int(_one(q, "idx"))
@@ -137,6 +141,11 @@ class Lab:
         ids = {n["id"] for n in graph["nodes"]}
         res["map_path"] = map_path(res["entry"], ids, graph["edges"])
         return res
+
+    def stats(self, q):
+        m = self._run(q)
+        rows = stats.read(m.engine_path)
+        return {"ok": True, "run": m.id, "minutes": rows}
 
     def models(self, q):
         kinds = [k for k in _one(q, "kinds", "").split(",") if k]
@@ -333,9 +342,9 @@ def map_path(entry: dict, ids: set, edges: list | None = None) -> dict:
 GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file", "/api/map": "map",
               "/api/map3d": "map3d",
               "/api/source": "source", "/api/runs": "runs", "/api/timeline": "timeline",
-              "/api/live": "live", "/api/question": "question", "/api/models": "models",
+              "/api/live": "live", "/api/question": "question", "/api/models": "models", "/api/stats": "stats",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
-              "/api/civcodes": "civcodes"}
+              "/api/civcodes": "civcodes", "/api/economy": "economy"}
 POST_ROUTES = {"/api/ask": "p_ask", "/api/try_files": "p_try_files", "/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",
                "/api/format": "p_format",
                "/api/restore": "p_restore", "/api/clone/preview": "p_clone_preview",

@@ -25,6 +25,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab" data-tab="map" role="tab">Map</button>
     <button class="tab" data-tab="game" role="tab">Game</button>
+    <button class="tab" data-tab="economy" role="tab">Economy</button>
     <button class="tab" data-tab="models" role="tab">Models</button>
     <button class="tab" data-tab="edit" role="tab">Edit</button>
   </nav>
@@ -80,6 +81,7 @@
       <div class="vsplit" id="game-vsplit" title="Drag left / right"></div>
       <div class="right-pane">
         <div class="mini-wrap">
+          <div id="game-stats" class="stats-panel"></div>
           <div id="game-cy" class="cy mini"></div>
           <div id="game-3d" class="cy mini g3d hidden"></div>
           <div class="seg mini-bar" id="game-dim"><button data-d="2d" class="on">2D</button><button data-d="3d">3D</button></div>
@@ -88,6 +90,15 @@
         <div id="io-panel" class="io-panel"><p class="muted">Pick a question on the left.</p></div>
       </div>
     </div>
+  </section>
+
+  <!-- ECONOMY (every seat, every game minute) ------------------------------>
+  <section id="view-economy" class="view">
+    <div class="toolbar">
+      <label>Run <select id="eco-run"></select></label>
+      <span id="eco-status" class="muted"></span>
+    </div>
+    <div id="eco-body" class="eco-body"></div>
   </section>
 
   <!-- MODELS ------------------------------------------------------------------>
@@ -146,7 +157,9 @@
 <script src="/static/js/mapview.js"></script>
 <script src="/static/js/game.js"></script>
 <script src="/static/js/splitters.js"></script>
+<script src="/static/js/stats.js"></script>
 <script src="/static/js/models.js"></script>
+<script src="/static/js/economy.js"></script>
 <script src="/static/js/editor.js"></script>
 <script>Lab.start();</script>
 </body>
