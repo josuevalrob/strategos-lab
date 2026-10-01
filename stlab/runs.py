@@ -495,9 +495,11 @@ class Registry:
             base = root.parent
             for dirpath, dirnames, _files in os.walk(root):
                 d = Path(dirpath)
-                # <run>/advisor/*.jsonl, or (solo_village.sh) <run>/*.jsonl next to engine.log.
+                # <run>/advisor/*.jsonl, or (solo_village.sh) <run>/*.jsonl next to engine.log,
+                # or (solo.sh, no advisor) engine.log + engine.pid.
                 if ((d / "advisor").is_dir() and any((d / "advisor").glob("*.jsonl"))) or \
-                        ((d / "engine.log").exists() and any(d.glob("*.jsonl"))):
+                        ((d / "engine.log").exists() and
+                         (any(d.glob("*.jsonl")) or (d / "engine.pid").exists())):
                     found[str(d.relative_to(base))] = d
                 dirnames[:] = [n for n in dirnames if n not in self.SKIP and not n.startswith(".")]
         self._dirs = found

@@ -9,7 +9,7 @@ from pathlib import Path
 
 LAB_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REPO = Path(os.path.expanduser("~/Projects/0AD"))
-REQUIRED_BRANCH = "strategos/mvp1"
+REQUIRED_BRANCH = "strategos/v2"
 
 MOD_DATA = "binaries/data/mods/strategos/simulation/data/strategos"
 CIVS_DIR = MOD_DATA + "/civs"
