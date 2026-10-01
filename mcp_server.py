@@ -134,6 +134,59 @@ def try_files(run: str, idxs: list, edits: dict, models: list | None = None) -> 
                                     "models": models or ["jev", "laya"]})
 
 
+RES = ("food", "wood", "stone", "metal")
+
+
+def _tot(o) -> float:
+    if isinstance(o, dict):
+        return float(o["total"]) if "total" in o else sum(float(v) for v in o.values() if isinstance(v, (int, float)))
+    return float(o or 0)
+
+
+def _player(p: dict) -> dict:
+    s = p.get("stats") or {}
+    g = s.get("resourcesGathered") or {}
+    gathered = {r: round(g.get(r) or 0) for r in RES}
+    eco = round((sum(gathered.values()) + (s.get("tradeIncome") or 0)) / 10)
+    mil = round(((s.get("enemyUnitsKilledValue") or 0) + (s.get("unitsCapturedValue") or 0)
+                 + (s.get("enemyBuildingsDestroyedValue") or 0) + (s.get("buildingsCapturedValue") or 0)) / 10)
+    expl = round((s.get("percentMapExplored") or 0) * 10)
+    return {"id": p.get("id"), "name": p.get("name"), "civ": p.get("civ"), "state": p.get("state"),
+            "phase": p.get("phase"), "pop": p.get("pop"), "popLimit": p.get("popLimit"),
+            "stock": {r: int((p.get("stock") or {}).get(r) or 0) for r in RES},
+            "alive": p.get("alive"), "gathered": gathered,
+            "units": {"trained": _tot(s.get("unitsTrained")), "lost": _tot(s.get("unitsLost")),
+                      "killed": _tot(s.get("enemyUnitsKilled"))},
+            "buildings": {"constructed": _tot(s.get("buildingsConstructed")), "lost": _tot(s.get("buildingsLost")),
+                          "destroyed": _tot(s.get("enemyBuildingsDestroyed"))},
+            "map_control_pct": s.get("percentMapControlled"),
+            "score": {"economy": eco, "military": mil, "exploration": expl, "total": eco + mil + expl}}
+
+
+def get_stats(run: str, minute: int | None = None, series: bool = False, raw: bool = False) -> dict:
+    """Game statistics (engine.log "[strategos] stats" lines, one per game minute)."""
+    rows = _get("/api/stats", run=run).get("minutes") or []
+    if not rows:
+        return {"run": run, "minutes": 0, "note": "no stats lines: only games started after 0AD commit "
+                "1226e3a9a1 (2026-10-01 11:26) write them"}
+    pick = rows[-1]
+    if minute is not None:
+        pick = rows[0]
+        for r in rows:
+            if (r.get("m") or 0) <= minute:
+                pick = r
+    out = {"run": run, "minutes_logged": len(rows), "last_minute": rows[-1].get("m"),
+           "minute": pick.get("m"), "players": [_player(p) for p in pick.get("players") or []]}
+    if raw:
+        out["raw"] = pick
+    if series:
+        out["series"] = [{"m": r.get("m"), "players": [
+            {"id": q["id"], "pop": q["pop"], "soldiers": (q["alive"] or {}).get("soldiers"),
+             "gathered": sum(q["gathered"].values()), "killed": q["units"]["killed"], "lost": q["units"]["lost"],
+             "score": q["score"]["total"]} for q in map(_player, r.get("players") or [])]} for r in rows]
+    return out
+
+
 S = {"type": "string"}
 I = {"type": "integer"}
 MODELS = {"type": "array", "items": {"type": "string", "enum": ["jev", "laya"]},
@@ -154,6 +207,11 @@ TOOLS = {
     "list_files": (list_files, "The Q&A files the prompts are built from (civ, heroes, question specs, "
                    "doctrine), repo-relative paths.", {}, []),
     "get_file": (get_file, "Current text of one Q&A file.", {"path": S}, ["path"]),
+    "get_stats": (get_stats, "Live/after-game statistics for every player, like 0 A.D.'s summary screen: score "
+                  "(economy/military/exploration), pop, stock, gathered, units alive/trained/lost/killed, buildings, "
+                  "map control. Latest minute by default, or 'minute'; series=true adds per-minute trends; "
+                  "raw=true adds the full StatisticsTracker data.",
+                  {"run": S, "minute": I, "series": {"type": "boolean"}, "raw": {"type": "boolean"}}, ["run"]),
     "try_files": (try_files, "Test edits to Q&A files without writing them: rebuild the prompts of the given "
                   "questions (idxs, max 50) from the edited files (edits = {path: full new text}), ask the "
                   "models, and report per question the logged choice vs the new ones ('changed').",

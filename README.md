@@ -200,4 +200,4 @@ tests/              unittest suite + fixture builder
 Needs the lab running (`python3 lab.py`; LAB_URL overrides http://127.0.0.1:8765).
 Tools: `list_runs`, `list_questions(run, kind)`, `get_question(run, idx)`,
 `ask(run, idx, prompt?, question?, models?)`, `list_files`, `get_file(path)`,
-`try_files(run, idxs≤50, edits{path: text}, models?)`. Read + ask only: nothing is written.
+`try_files(run, idxs≤50, edits{path: text}, models?)`, `get_stats(run, minute?, series?, raw?)`. Read + ask only: nothing is written.
