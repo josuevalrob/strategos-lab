@@ -63,6 +63,29 @@ def qa_kind(rel: str) -> str | None:
     return None
 
 
+def advisor_dir(run_dir: Path) -> Path:
+    """Where a run's advisor JSONL is: <run>/advisor/ (phase10e.py, round.sh), else the run
+    directory itself (solo_village.sh: <run>/ or <run>/p<N>-<model>/)."""
+    adir = Path(run_dir) / "advisor"
+    return adir if adir.is_dir() else Path(run_dir)
+
+
+def pid_gone(run_dir: Path) -> bool:
+    """True when the run wrote engine.pid and that process is no longer running."""
+    pf = Path(run_dir) / "engine.pid"
+    try:
+        pid = int(pf.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+
+
 @dataclass
 class Config:
     repo: Path = DEFAULT_REPO

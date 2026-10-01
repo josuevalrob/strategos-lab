@@ -473,7 +473,7 @@ def pinned_of(cfg, live_runs: list) -> dict:
     out = {}
     for root in cfg.run_roots():
         for rid in live_runs:
-            adv = root.parent / rid / "advisor"
+            adv = config.advisor_dir(root.parent / rid)
             for f in sorted(adv.glob("*.jsonl")) if adv.is_dir() else []:
                 try:
                     with open(f, encoding="utf-8") as fh:

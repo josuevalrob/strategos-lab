@@ -152,7 +152,7 @@ def _snapshot_pin(run: runs.RunModel, header: dict) -> Path | None:
     snap = qa_block.get("snapshot")
     if not snap:
         return None
-    p = run.dir / "advisor" / snap
+    p = config.advisor_dir(run.dir) / snap
     return p if p.is_dir() else None
 
 

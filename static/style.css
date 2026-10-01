@@ -301,7 +301,7 @@ body.dragging iframe, body.dragging canvas { pointer-events: none; }
 .st-chart .st-lbl { fill: var(--muted); font-size: 10px; }
 
 /* Economy view */
-.eco-body { overflow: auto; padding: 12px 16px; height: 100%; box-sizing: border-box; }
+.eco-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; }
 .eco-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; font-weight: 600; }
 .eco-legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .eco-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }

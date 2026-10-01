@@ -16,6 +16,8 @@ from pathlib import Path
 
 from . import code, config
 
+# StrategosEconomy.js: every player, every game minute.
+ECONOMY_RE = re.compile(r"\[strategos\] economy (.+?) \(p(\d+), ([^)]*)\) (\{.*\})\s*$")
 ENGINE_RE = re.compile(r"PlayerID (\d+) \|\s+\[strategos\] (.*)$")
 ASKED_RE = re.compile(r"^p(\d+) (\w+) at (\S*): asked q#(\d+)(?: options (\S+))? \(rule ([^)]*)\)")
 SETTLED_RE = re.compile(r"^p(\d+) q#(\d+) (\w+)=(\S+) by (\S+)(?: p=(\S+))? \((.*)\)\s*$")
@@ -229,8 +231,7 @@ class RunModel:
 
     # -- files ---------------------------------------------------------------
     def jsonl_files(self) -> list[Path]:
-        adir = self.dir / "advisor"
-        return sorted(adir.glob("*.jsonl")) if adir.exists() else []
+        return _jsonls(self.dir)
 
     def _engine_file(self) -> Path | None:
         for name in ("engine.log", "head.log"):
@@ -350,7 +351,58 @@ class RunModel:
         return (self.dir / "summary.json").exists()
 
     def is_live(self, window_s: float) -> bool:
-        return not self.finished() and (time.time() - self.mtime()) < window_s
+        # A run whose engine process is gone is not live, however fresh its files.
+        return not self.finished() and not config.pid_gone(self.dir) and \
+            (time.time() - self.mtime()) < window_s
+
+    def seats(self) -> list[dict]:
+        """Who drives each seat, "Jev (p1, blue)": the engine's economy lines (the in-game
+        names and colors), else the advisor header's seats, else derived from its aiPlayers."""
+        eco = self.economy()
+        if eco["seats"]:
+            return eco["seats"]
+        h = self.headers[0] if self.headers else {}
+        if h.get("seats"):
+            return [{"id": s["id"], "name": s["name"], "label": s["label"]} for s in h["seats"]]
+        return derived_seats(h)
+
+    def economy(self) -> dict:
+        """Every [strategos] economy line of engine.log (and economy.log, a re-simulated
+        replay's), by seat.  Re-read only when a file changed."""
+        key = []
+        for name in ("engine.log", "economy.log"):
+            try:
+                st = (self.dir / name).stat()
+                key.append((name, st.st_size, st.st_mtime))
+            except OSError:
+                pass
+        if getattr(self, "_eco_key", None) == key:
+            return self._eco
+        rows, seats = [], {}
+        for name in ("engine.log", "economy.log"):
+            p = self.dir / name
+            if not p.exists():
+                continue
+            with open(p, encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    if "[strategos] economy " not in raw:
+                        continue
+                    m = ECONOMY_RE.search(raw)
+                    if not m:
+                        continue
+                    try:
+                        obj = json.loads(m.group(4))
+                    except json.JSONDecodeError:
+                        continue
+                    pid = int(m.group(2))
+                    label = f"{m.group(1)} (p{pid}, {m.group(3)})"
+                    seats.setdefault(pid, {"id": pid, "name": m.group(1), "color": m.group(3),
+                                           "label": label})
+                    rows.append({"player": pid, **obj})
+            if rows:
+                break
+        self._eco_key, self._eco = key, {"seats": [seats[k] for k in sorted(seats)], "rows": rows}
+        return self._eco
 
     def kinds(self) -> dict:
         out: dict[str, int] = {}
@@ -369,6 +421,7 @@ class RunModel:
             "mod_sha": h.get("mod_sha"), "qa": qa_block,
             "qa_version": qa_version(h),
             "players": (h.get("engine") or {}).get("aiPlayers"),
+            "seats": self.seats(),
             "mtime": self.mtime(), "finished": self.finished(), "live": self.is_live(window_s),
             "engine_log": self.engine_path.name if self.engine_path else None,
             "headers": len(self.headers),
@@ -410,6 +463,27 @@ class RunModel:
     def row(self, idx: int) -> dict:
         with self.lock:
             return self.rows[idx]
+
+
+SEAT_COLORS = ("blue", "red", "green", "yellow", "teal", "purple", "orange", "grey")
+DISPLAY = {"jev": "Jev", "laya": "Laya", "drex": "Drex"}
+
+
+def derived_seats(header: dict) -> list[dict]:
+    """An older run (no seats in its header, no economy lines): a Strategos seat is named
+    after the adapter, a Petra one "Petra"; the color is the seat's default."""
+    ad = (header.get("adapter") or {}).get("name") or "?"
+    out = []
+    for p in ((header.get("engine") or {}).get("aiPlayers")) or []:
+        pid, ai = p.get("id"), str(p.get("ai", ""))
+        name = DISPLAY.get(ad, ad) if ai.startswith("strategos") else "Petra" if ai.startswith("petra") else ai
+        color = SEAT_COLORS[pid - 1] if isinstance(pid, int) and 0 < pid <= len(SEAT_COLORS) else "?"
+        out.append({"id": pid, "name": name, "label": f"{name} (p{pid}, {color})"})
+    return out
+
+
+def _jsonls(d: Path) -> list[Path]:
+    return sorted(config.advisor_dir(d).glob("*.jsonl"))
 
 
 def _strategos_player(header: dict) -> int | None:
@@ -455,7 +529,9 @@ class Registry:
             base = root.parent
             for dirpath, dirnames, _files in os.walk(root):
                 d = Path(dirpath)
-                if (d / "advisor").is_dir() and any((d / "advisor").glob("*.jsonl")):
+                # <run>/advisor/*.jsonl, or (solo_village.sh) <run>/*.jsonl next to engine.log.
+                if ((d / "advisor").is_dir() and any((d / "advisor").glob("*.jsonl"))) or \
+                        ((d / "engine.log").exists() and any(d.glob("*.jsonl"))):
                     found[str(d.relative_to(base))] = d
                 dirnames[:] = [n for n in dirnames if n not in self.SKIP and not n.startswith(".")]
         self._dirs = found
@@ -483,7 +559,7 @@ class Registry:
         best, best_t = None, -1.0
         for rid, d in dirs.items():
             t = 0.0
-            for p in list((d / "advisor").glob("*.jsonl")) + [d / "engine.log"]:
+            for p in _jsonls(d) + [d / "engine.log"]:
                 try:
                     t = max(t, p.stat().st_mtime)
                 except OSError:
@@ -495,10 +571,10 @@ class Registry:
     def live_runs(self) -> list[str]:
         out = []
         for rid, d in self.scan().items():
-            if (d / "summary.json").exists():
+            if (d / "summary.json").exists() or config.pid_gone(d):
                 continue
             t = 0.0
-            for p in list((d / "advisor").glob("*.jsonl")) + [d / "engine.log"]:
+            for p in _jsonls(d) + [d / "engine.log"]:
                 try:
                     t = max(t, p.stat().st_mtime)
                 except OSError:

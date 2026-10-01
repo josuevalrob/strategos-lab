@@ -73,6 +73,12 @@
     V.startPolling();
   };
 
+  /* "Jev (p1, blue)", never a bare player number. */
+  V.seat = function (player) {
+    var s = ((V.runInfo && V.runInfo.seats) || []).filter(function (x) { return x.id === player; })[0];
+    return s ? s.label : "p" + player;
+  };
+
   V.mapStale = function () { V.graphCiv = null; V.graph3Civ = null; };
   V.onTheme = function () { V.graph.restyle(); V.graph3.restyle(); };
 
@@ -83,7 +89,8 @@
       sel.innerHTML = V.runs.map(function (r) {
         var d = new Date(r.mtime * 1000), pad = function (n) { return (n < 10 ? "0" : "") + n; };
         var when = pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
-        var label = when + "  ·  " + r.id.replace(/^results\//, "") + "  ·  " + (r.adapter || "?") + " " + (r.version || "") +
+        var who = (r.seats || []).map(function (s) { return s.label; }).join(" vs ");
+        var label = when + "  ·  " + r.id.replace(/^results\//, "") + "  ·  " + (who ? who + "  ·  " : "") + (r.adapter || "?") + " " + (r.version || "") +
           "  ·  Q&A " + (r.qa_version || "?") + "  ·  " + r.rows + " q" + (r.live ? "  ·  LIVE" : "");
         return '<option value="' + Lab.esc(r.id) + '"' + (r.id === V.run ? " selected" : "") + ">" + Lab.esc(label) + "</option>";
       }).join("");
@@ -374,7 +381,7 @@
     }).join("<br>");
     var h = [];
     h.push('<div class="io-head"><h3>q#' + e.qid + " · " + Lab.esc(e.kind) + "</h3>" +
-      '<span class="muted">minute ' + Lab.esc(e.minute) + " · player " + Lab.esc(e.player) + "</span>" + modePill +
+      '<span class="muted">minute ' + Lab.esc(e.minute) + " · " + Lab.esc(V.seat(e.player)) + "</span>" + modePill +
       (res.map_path && !res.map_path.on_map ? '<span class="pill">not on the play map (raid / separate question)</span>' : "") +
       '<span class="spacer"></span><button class="btn tiny js-map">Open on the Map</button></div>');
     h.push('<dl class="kv">' +
@@ -421,7 +428,7 @@
         if (g.settled) lines.push({ line: g.settled.line, text: g.settled.text, what: "settled" });
         (g.lines || []).forEach(function (l) { lines.push({ line: l.line, text: l.text, what: "order" }); });
         lines.sort(function (x, y) { return x.line - y.line; });
-        out.innerHTML = '<p class="small muted">engine.log lines for q#' + e.qid + " (player " + Lab.esc(e.player) + ")</p>" +
+        out.innerHTML = '<p class="small muted">engine.log lines for q#' + e.qid + " (" + Lab.esc(V.seat(e.player)) + ")</p>" +
           (lines.length ? '<div class="snippet">' + lines.map(function (l) {
             return '<div class="ln"><span class="n">' + l.line + "</span>" + Lab.esc(l.text) + "</div>";
           }).join("") + "</div>" : '<p class="muted">none</p>');
