@@ -157,8 +157,12 @@ def _snapshot_pin(run: runs.RunModel, header: dict) -> Path | None:
 
 
 def rebuild(cfg: config.Config, run: runs.RunModel, rows: list[dict],
-            force_current: bool = False) -> list[dict]:
-    """Rebuilt prompts for rows of one run (same header), labelled with how."""
+            force_current: bool = False, edits: dict | None = None) -> list[dict]:
+    """Rebuilt prompts for rows of one run (same header), labelled with how.
+    ``edits`` = {repo-relative Q&A path: new text}, laid over the files in a temp copy only."""
+    for rel in edits or {}:
+        if not config.is_qa_path(rel):
+            raise ValueError(f"not a Q&A file: {rel}")
     if not rows:
         return []
     header = run.header_of(rows[0])
@@ -189,6 +193,12 @@ def rebuild(cfg: config.Config, run: runs.RunModel, rows: list[dict],
     elif pin is not None:
         # The files the game really read: the run's qa_snapshot over that commit.
         tmp = root = overlay_copy(cfg, root, pin)
+    if edits:
+        if tmp is None:
+            tmp = root = overlay_copy(cfg, root, Path("/nonexistent"))
+        for rel, text in edits.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text)
     try:
         qs = [question_for(run, r) for r in rows]
         built = run_builder(root, qs, mode, adapter.get("model") or adapter.get("version"),
@@ -210,6 +220,8 @@ def rebuild(cfg: config.Config, run: runs.RunModel, rows: list[dict],
             notes.append("the run's commit is not available: built from the files as they are now")
         if note_mode:
             notes.append(note_mode)
+        if edits:
+            notes.append("with edits to: " + ", ".join(sorted(edits)))
         if b.get("ok"):
             n = len(b["text"])
             if isinstance(logged, int):

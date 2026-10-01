@@ -167,6 +167,49 @@ class Lab:
         return ask_ok(self.asker.ask(str(body.get("model")), res, body.get("prompt") or None,
                                      qs if isinstance(qs, dict) else None))
 
+    def p_try_files(self, body):
+        """Rebuild the prompts of some questions with edited Q&A files (temp copy only), ask
+        the models, report against what was logged.  At most 50 questions per call."""
+        m = self._run({"run": [str(body.get("run") or "")]})
+        idxs = [int(i) for i in (body.get("idxs") or [])][:50]
+        edits = body.get("edits") or {}
+        models_ = [x for x in (body.get("models") or ["jev", "laya"]) if x in ("jev", "laya")]
+        if not idxs or not isinstance(edits, dict):
+            raise editor.Refused("bad_request", "need idxs (list) and edits ({path: text})")
+        rows = [m.row(i) for i in idxs]
+        try:
+            built = prompts.rebuild(self.cfg, m, rows, edits=edits)
+        except ValueError as exc:
+            raise editor.Refused("bad_request", str(exc)) from None
+        jobs = []
+        for i, row, b in zip(idxs, rows, built):
+            for mdl in models_:
+                jobs.append((i, row, b, mdl))
+
+        def one(job):
+            i, row, b, mdl = job
+            if not b.get("ok"):
+                return i, mdl, {"ok": False, "error": b.get("error")}
+            res = {"io": {"prompt": b["prompt"], "request": b["request"]}, "entry": {
+                "kind": row.get("kind"), "options": row.get("options")}}
+            return i, mdl, self.asker.ask(mdl, res)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(8) as ex:
+            answers = list(ex.map(one, jobs))
+        out = []
+        for i, row, b in zip(idxs, rows, built):
+            item = {"idx": i, "qid": row.get("qid"), "kind": row.get("kind"),
+                    "minute": (row.get("features") or {}).get("game_minute"),
+                    "logged": {"choice": row.get("choice"), "p": row.get("p"), "rule": row.get("rule")},
+                    "prompt_chars": len(b.get("prompt") or ""), "notes": b.get("notes"),
+                    "error": None if b.get("ok") else b.get("error")}
+            for j, mdl, r in answers:
+                if j == i:
+                    item[mdl] = {k: r.get(k) for k in ("ok", "choice", "probabilities", "error", "ms")}
+                    item[mdl]["changed"] = r.get("ok") and r.get("choice") != row.get("choice")
+            out.append(item)
+        return {"ok": True, "results": out}
+
     def p_validate(self, body):
         rel = body.get("path")
         if not config.is_qa_path(rel):
@@ -293,7 +336,7 @@ GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file", "
               "/api/live": "live", "/api/question": "question", "/api/models": "models",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
               "/api/civcodes": "civcodes"}
-POST_ROUTES = {"/api/ask": "p_ask", "/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",
+POST_ROUTES = {"/api/ask": "p_ask", "/api/try_files": "p_try_files", "/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",
                "/api/format": "p_format",
                "/api/restore": "p_restore", "/api/clone/preview": "p_clone_preview",
                "/api/clone": "p_clone"}

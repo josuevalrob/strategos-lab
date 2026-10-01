@@ -192,3 +192,12 @@ tests/              unittest suite + fixture builder
 - "Live" = a run without `summary.json` written in the last 120 s; polling every 2 s.
   Checked with a fake game writer, not yet during a real game.
 - Drafts live in the browser's localStorage. One user; Apply is serialized.
+
+## MCP server (for agents)
+
+`mcp_server.py` (stdlib, stdio) exposes the lab to other agents. Registered at user scope:
+`claude mcp add strategos-lab --scope user -- python3 ~/Projects/strategos-lab/mcp_server.py`.
+Needs the lab running (`python3 lab.py`; LAB_URL overrides http://127.0.0.1:8765).
+Tools: `list_runs`, `list_questions(run, kind)`, `get_question(run, idx)`,
+`ask(run, idx, prompt?, question?, models?)`, `list_files`, `get_file(path)`,
+`try_files(run, idxs≤50, edits{path: text}, models?)`. Read + ask only: nothing is written.
