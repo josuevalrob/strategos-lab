@@ -353,15 +353,20 @@ def load(cfg: config.Config) -> CodeFacts:
         return _cache[key]
     files = read_code(cfg)
     facts = CodeFacts()
+    # A code file that is not in the repo (strategos/v2 has none of mvp1's map code) leaves its
+    # part of the map empty; only a file that exists and no longer matches is an error.
+    present = {k for k, rel in config.CODE_FILES.items() if cfg.path(rel).exists()}
     head = files.get("head.js", "")
     try:
         facts.order_routes, facts.order_lines = parse_object_of_lists(head, "ORDER_ROUTES")
     except ValueError as exc:
-        facts.errors.append(f"head.js: {exc}")
+        if "head.js" in present:
+            facts.errors.append(f"head.js: {exc}")
     try:
         facts.stratagem_orders, facts.stratagem_lines = parse_object_of_lists(head, "STRATAGEM_ORDERS")
     except ValueError as exc:
-        facts.errors.append(f"head.js: {exc}")
+        if "head.js" in present:
+            facts.errors.append(f"head.js: {exc}")
     facts.managerless = parse_string_set(head, "MANAGERLESS_ORDERS")
     facts.consts = parse_string_consts(head)
     rules = files.get("rules.js", "")
@@ -373,7 +378,7 @@ def load(cfg: config.Config) -> CodeFacts:
         facts.anchors[aid] = {"id": aid, "file": fkey, "path": config.CODE_FILES[fkey],
                               "line": line, "count": count, "found": line is not None,
                               "text": needle.strip("\n")}
-        if line is None:
+        if line is None and fkey in present:
             facts.errors.append(f"anchor {aid!r} not found in {fkey}: {needle.strip()!r}")
     _cache.clear()
     _cache[key] = facts

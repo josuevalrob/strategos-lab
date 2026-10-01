@@ -63,7 +63,8 @@
     V.loadRuns().then(function () {
       if (!V.run) {
         var saved = Lab.store.get("lab.game.run", null);
-        var pick = V.runs.filter(function (r) { return r.id === saved; })[0] ||
+        var pick = V.runs.filter(function (r) { return r.live; })[0] ||   // a game running now first
+          V.runs.filter(function (r) { return r.id === saved; })[0] ||
           V.runs.filter(function (r) { return r.id.indexOf("phase12c2-jev-live") >= 0; })[0] || V.runs[0];
         if (pick) V.open(pick.id, null);
       } else {
