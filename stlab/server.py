@@ -126,10 +126,6 @@ class Lab:
     def live(self, q):
         return self.timeline(q)
 
-    def economy(self, q):
-        m = self._run(q)
-        return {"run": m.info(self.cfg.live_window_s), **m.economy()}
-
     def question(self, q):
         m = self._run(q)
         idx = int(_one(q, "idx"))
@@ -344,7 +340,7 @@ GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file", "
               "/api/source": "source", "/api/runs": "runs", "/api/timeline": "timeline",
               "/api/live": "live", "/api/question": "question", "/api/models": "models", "/api/stats": "stats",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
-              "/api/civcodes": "civcodes", "/api/economy": "economy"}
+              "/api/civcodes": "civcodes"}
 POST_ROUTES = {"/api/ask": "p_ask", "/api/try_files": "p_try_files", "/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",
                "/api/format": "p_format",
                "/api/restore": "p_restore", "/api/clone/preview": "p_clone_preview",

@@ -14,10 +14,8 @@ import threading
 import time
 from pathlib import Path
 
-from . import code, config
+from . import code, config, stats
 
-# StrategosEconomy.js: every player, every game minute.
-ECONOMY_RE = re.compile(r"\[strategos\] economy (.+?) \(p(\d+), ([^)]*)\) (\{.*\})\s*$")
 ENGINE_RE = re.compile(r"PlayerID (\d+) \|\s+\[strategos\] (.*)$")
 ASKED_RE = re.compile(r"^p(\d+) (\w+) at (\S*): asked q#(\d+)(?: options (\S+))? \(rule ([^)]*)\)")
 SETTLED_RE = re.compile(r"^p(\d+) q#(\d+) (\w+)=(\S+) by (\S+)(?: p=(\S+))? \((.*)\)\s*$")
@@ -356,53 +354,17 @@ class RunModel:
             (time.time() - self.mtime()) < window_s
 
     def seats(self) -> list[dict]:
-        """Who drives each seat, "Jev (p1, blue)": the engine's economy lines (the in-game
-        names and colors), else the advisor header's seats, else derived from its aiPlayers."""
-        eco = self.economy()
-        if eco["seats"]:
-            return eco["seats"]
+        """Who drives each seat, "Jev (p1, blue)": the advisor header's seats (advisor.py),
+        else the names in engine.log's stats lines (head.js reportStats), else derived from
+        the header's aiPlayers."""
         h = self.headers[0] if self.headers else {}
         if h.get("seats"):
             return [{"id": s["id"], "name": s["name"], "label": s["label"]} for s in h["seats"]]
+        rows = stats.read(self.engine_path)
+        if rows:
+            return [{"id": p["id"], "name": p.get("name"), "label": seat_label(p["id"], p.get("name"))}
+                    for p in rows[0].get("players") or [] if p.get("id")]
         return derived_seats(h)
-
-    def economy(self) -> dict:
-        """Every [strategos] economy line of engine.log (and economy.log, a re-simulated
-        replay's), by seat.  Re-read only when a file changed."""
-        key = []
-        for name in ("engine.log", "economy.log"):
-            try:
-                st = (self.dir / name).stat()
-                key.append((name, st.st_size, st.st_mtime))
-            except OSError:
-                pass
-        if getattr(self, "_eco_key", None) == key:
-            return self._eco
-        rows, seats = [], {}
-        for name in ("engine.log", "economy.log"):
-            p = self.dir / name
-            if not p.exists():
-                continue
-            with open(p, encoding="utf-8", errors="replace") as fh:
-                for raw in fh:
-                    if "[strategos] economy " not in raw:
-                        continue
-                    m = ECONOMY_RE.search(raw)
-                    if not m:
-                        continue
-                    try:
-                        obj = json.loads(m.group(4))
-                    except json.JSONDecodeError:
-                        continue
-                    pid = int(m.group(2))
-                    label = f"{m.group(1)} (p{pid}, {m.group(3)})"
-                    seats.setdefault(pid, {"id": pid, "name": m.group(1), "color": m.group(3),
-                                           "label": label})
-                    rows.append({"player": pid, **obj})
-            if rows:
-                break
-        self._eco_key, self._eco = key, {"seats": [seats[k] for k in sorted(seats)], "rows": rows}
-        return self._eco
 
     def kinds(self) -> dict:
         out: dict[str, int] = {}
@@ -470,16 +432,20 @@ DISPLAY = {"jev": "Jev", "laya": "Laya", "drex": "Drex"}
 
 
 def derived_seats(header: dict) -> list[dict]:
-    """An older run (no seats in its header, no economy lines): a Strategos seat is named
+    """An older run (no seats in its header, no stats lines): a Strategos seat is named
     after the adapter, a Petra one "Petra"; the color is the seat's default."""
     ad = (header.get("adapter") or {}).get("name") or "?"
     out = []
     for p in ((header.get("engine") or {}).get("aiPlayers")) or []:
         pid, ai = p.get("id"), str(p.get("ai", ""))
         name = DISPLAY.get(ad, ad) if ai.startswith("strategos") else "Petra" if ai.startswith("petra") else ai
-        color = SEAT_COLORS[pid - 1] if isinstance(pid, int) and 0 < pid <= len(SEAT_COLORS) else "?"
-        out.append({"id": pid, "name": name, "label": f"{name} (p{pid}, {color})"})
+        out.append({"id": pid, "name": name, "label": seat_label(pid, name)})
     return out
+
+
+def seat_label(pid, name) -> str:
+    color = SEAT_COLORS[pid - 1] if isinstance(pid, int) and 0 < pid <= len(SEAT_COLORS) else "?"
+    return f"{name} (p{pid}, {color})"
 
 
 def _jsonls(d: Path) -> list[Path]:

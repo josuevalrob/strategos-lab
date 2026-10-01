@@ -151,7 +151,6 @@ class HttpSmokeTest(unittest.TestCase):
         q = self.get("/api/question?run=results/smoke-old&idx=0")
         self.assertEqual(q["io"]["mode"], "rebuilt from current files")
         self.get("/api/question?run=results/nope&idx=0", status=404)
-        self.assertEqual(self.get("/api/economy?run=results/smoke-l3")["rows"], [])
         live = self.get("/api/live?run=newest&kind=play")
         self.assertIn(live["run"]["id"], ids)
         models = self.get("/api/models")

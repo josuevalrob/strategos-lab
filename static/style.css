@@ -300,13 +300,3 @@ body.dragging iframe, body.dragging canvas { pointer-events: none; }
 .st-chart .st-axis { stroke: var(--border); }
 .st-chart .st-lbl { fill: var(--muted); font-size: 10px; }
 
-/* Economy view */
-.eco-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; }
-.eco-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; font-weight: 600; }
-.eco-legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
-.eco-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-.eco-card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
-.eco-title { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
-.eco-ax { font-size: 9px; fill: var(--muted); }
-.eco-table { border-collapse: collapse; margin-top: 14px; font-size: 12px; width: 100%; }
-.eco-table th, .eco-table td { border-bottom: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; }

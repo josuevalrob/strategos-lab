@@ -25,7 +25,6 @@
   <nav class="tabs" role="tablist">
     <button class="tab" data-tab="map" role="tab">Map</button>
     <button class="tab" data-tab="game" role="tab">Game</button>
-    <button class="tab" data-tab="economy" role="tab">Economy</button>
     <button class="tab" data-tab="models" role="tab">Models</button>
     <button class="tab" data-tab="edit" role="tab">Edit</button>
   </nav>
@@ -92,15 +91,6 @@
     </div>
   </section>
 
-  <!-- ECONOMY (every seat, every game minute) ------------------------------>
-  <section id="view-economy" class="view">
-    <div class="toolbar">
-      <label>Run <select id="eco-run"></select></label>
-      <span id="eco-status" class="muted"></span>
-    </div>
-    <div id="eco-body" class="eco-body"></div>
-  </section>
-
   <!-- MODELS ------------------------------------------------------------------>
   <section id="view-models" class="view">
     <div class="toolbar">
@@ -159,7 +149,6 @@
 <script src="/static/js/splitters.js"></script>
 <script src="/static/js/stats.js"></script>
 <script src="/static/js/models.js"></script>
-<script src="/static/js/economy.js"></script>
 <script src="/static/js/editor.js"></script>
 <script>Lab.start();</script>
 </body>
