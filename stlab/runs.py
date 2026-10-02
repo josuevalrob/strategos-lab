@@ -178,7 +178,11 @@ def applied_summary(entry: dict | None, choice: str | None = None, kind: str | N
 def _chain_summary(row: dict) -> dict | None:
     """A parent's pick (v2 asker/pull.py): which child's row carries the request; a
     child's answer the parent did not pick.  None for every other row."""
-    chain, parent = row.get("chain"), row.get("parent")
+    chain, parent, ev = row.get("chain"), row.get("parent"), row.get("event_chain")
+    if ev and ev.get("router"):
+        target = ev.get("leaf") or ev.get("persona")
+        return {"state": "routed", "order": None, "managers": [],
+                "text": f"router {ev['router']} ({ev.get('id')}): {row.get('choice') or 'no answer'} for {target}"}
     if row.get("outcome") == "decided" and chain:
         child = (row.get("choice") or "?").split(":", 1)[0]
         return {"state": "decided", "order": None, "managers": [],
@@ -421,6 +425,7 @@ class RunModel:
             "adapter": row.get("adapter"), "latency_ms": row.get("latency_ms"),
             "error": row.get("error"), "has_io": bool(row.get("io")),
             "chain": row.get("chain"), "parent": row.get("parent"), "goal": row.get("goal"),
+            "event_chain": row.get("event_chain"),
             "source": {"file": row.get("_file"), "line": row.get("_line")},
             "game": {
                 "asked": asked, "settled": settled,
