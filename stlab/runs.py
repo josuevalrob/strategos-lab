@@ -175,6 +175,20 @@ def applied_summary(entry: dict | None, choice: str | None = None, kind: str | N
             "order": None, "managers": []}
 
 
+def _chain_summary(row: dict) -> dict | None:
+    """A parent's pick (v2 asker/pull.py): which child's row carries the request; a
+    child's answer the parent did not pick.  None for every other row."""
+    chain, parent = row.get("chain"), row.get("parent")
+    if row.get("outcome") == "decided" and chain:
+        child = (row.get("choice") or "?").split(":", 1)[0]
+        return {"state": "decided", "order": None, "managers": [],
+                "text": f"picked {row.get('choice')}: the request is {child}'s q#{chain.get('picked')}"}
+    if row.get("outcome") == "proposed" and parent:
+        return {"state": "proposed", "order": None, "managers": [],
+                "text": f"answer to parent {parent.get('id')} q#{parent.get('qid')}, not picked"}
+    return None
+
+
 def humanize_events(kind: str, events: str | None, classes=()) -> list[dict]:
     """``"hero_next:slot pass_order:dying+phase"`` -> [{part, events: [{code, text}]}]."""
     if not events:
@@ -406,13 +420,15 @@ class RunModel:
             "p": row.get("p"), "probs": meta.get("probabilities"), "outcome": row.get("outcome"),
             "adapter": row.get("adapter"), "latency_ms": row.get("latency_ms"),
             "error": row.get("error"), "has_io": bool(row.get("io")),
+            "chain": row.get("chain"), "parent": row.get("parent"), "goal": row.get("goal"),
             "source": {"file": row.get("_file"), "line": row.get("_line")},
             "game": {
                 "asked": asked, "settled": settled,
                 "choice": game_choice, "by": settled["by"] if settled else None,
-                "applied": ({"state": "logged", "text": "answer only logged: nothing changes in the game yet",
-                             "order": None, "managers": []} if row.get("outcome") == "logged" and not eng
-                            else applied_summary(eng, game_choice, kind)),
+                "applied": (_chain_summary(row) or
+                            ({"state": "logged", "text": "answer only logged: nothing changes in the game yet",
+                              "order": None, "managers": []} if row.get("outcome") == "logged" and not eng
+                             else applied_summary(eng, game_choice, kind))),
                 "lines": (eng or {}).get("applied", [])[:12],
             },
         }
