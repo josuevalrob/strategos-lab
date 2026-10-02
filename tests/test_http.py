@@ -94,16 +94,11 @@ class HttpSmokeTest(unittest.TestCase):
     def test_page_and_static(self):
         html = self.get("/", raw=True).decode()
         self.assertIn("<title>Strategos Lab</title>", html)
-        for src in ("/static/style.css", "/static/vendor/cytoscape.min.js", "/static/js/app.js",
-                    "/static/js/graph.js", "/static/js/mapview.js", "/static/js/game.js",
+        for src in ("/static/style.css", "/static/js/app.js",
+                    "/static/js/pipe.js", "/static/js/game.js",
                     "/static/js/models.js", "/static/js/editor.js"):
             self.assertIn(src, html)
             self.assertTrue(len(self.get(src, raw=True)) > 100, src)
-        for src in ("/static/js/map3d.js", "/static/js/map3d-boot.mjs", "/static/vendor/3d-force-graph.min.js",
-                    "/static/vendor/three/three.module.js", "/static/vendor/three/three.core.js",
-                    "/static/vendor/three-spritetext.mjs"):
-            self.assertTrue(len(self.get(src, raw=True)) > 300, src)
-        self.assertIn('"three": "/static/vendor/three/three.module.js"', html)
         self.get("/static/../lab.py", status=404, raw=True)
         self.get("/nope", status=404)
 
@@ -113,7 +108,6 @@ class HttpSmokeTest(unittest.TestCase):
         self.assertIn("results/smoke-l3", info["live_runs"])       # fresh, no summary.json
         self.assertNotIn("results/smoke-old", info["live_runs"])
         self.assertIn("NEXT game only", info["live_note"])          # its header has a qa pin
-        self.assertEqual(info["code_errors"], [])
         files = self.get("/api/files")
         self.assertEqual([c["civ"] for c in files["civs"]], ["spart"])
         f = self.get("/api/file?path=" + PLAY)
@@ -130,15 +124,6 @@ class HttpSmokeTest(unittest.TestCase):
         self.assertTrue(self.post("/api/validate", {"path": config.DOCTRINE_JSON, "data": bad})["errors"])
         self.assertEqual(self.post("/api/format", {"path": config.DOCTRINE_JSON, "data": json.loads(dj["text"])})["text"],
                          dj["text"])
-        m = self.get("/api/map?civ=spart")
-        self.assertGreater(len(m["nodes"]), 40)
-        m3 = self.get("/api/map3d?civ=spart")
-        self.assertEqual([p["id"] for p in m3["planes"]], ["reads", "pick"])
-        self.assertTrue(all("pos" in n and "plane" in n for n in m3["nodes"]))
-        line = [n for n in m["nodes"] if n["id"] == "part:hero_next"][0]["details"]["anchors"][0]["line"]
-        src = self.get(f"/api/source?file=head.js&line={line}")
-        self.assertTrue(any(x["n"] == line for x in src["lines"]))
-        self.get("/api/source?file=../../x&line=1", status=400)
         rs = self.get("/api/runs")
         ids = [r["id"] for r in rs["runs"]]
         self.assertIn("results/smoke-l3", ids)
@@ -147,7 +132,6 @@ class HttpSmokeTest(unittest.TestCase):
         self.assertEqual(self.get(f"/api/timeline?run=results/smoke-l3&kind=play&since={tl['rev']}")["entries"], [])
         q = self.get("/api/question?run=results/smoke-l3&idx=0")
         self.assertEqual(q["io"]["mode"], "exact")
-        self.assertEqual(q["map_path"]["chosen"], "opt:train:soldiers")
         q = self.get("/api/question?run=results/smoke-old&idx=0")
         self.assertEqual(q["io"]["mode"], "rebuilt from current files")
         self.get("/api/question?run=results/nope&idx=0", status=404)

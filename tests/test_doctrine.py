@@ -10,7 +10,7 @@ import unittest
 import fixture
 from fixture import git
 
-from stlab import code, config, editor, mapgraph, qa
+from stlab import code, config, editor, qa
 
 DOC = config.DOCTRINE_JSON
 
@@ -111,25 +111,6 @@ class DoctrineTest(unittest.TestCase):
             editor.apply(self.cfg, self.facts, [{"path": DOC, "data": d}], "x")
         self.assertEqual(cm.exception.code, "branch")
 
-    def test_map_follows_the_order_lists(self):
-        g = mapgraph.build(self.cfg, "spart")
-        n = {x["id"]: x for x in g["nodes"]}
-        hold = n["opt:hold"]
-        self.assertIn("doctrine.json", hold["label"])
-        srcs = hold["details"]["sources"]
-        self.assertEqual([s["focus"] for s in srcs], ["stratagem:hold-the-pass", "stratagem:ambush"])
-        self.assertTrue(all(s["path"] == DOC and isinstance(s["line"], int) for s in srcs))
-        line = (self.repo / DOC).read_text().splitlines()[srcs[0]["line"] - 1]
-        self.assertIn('"orders": ["hold", "strike", "fallback"]', line)
-        self.assertTrue(n["part:pass_order"]["details"]["sources"])
-        # Drop strike from both pass stratagems: the option leaves the map.
-        d = as_js(self.doc())
-        for k in ("hold-the-pass", "ambush"):
-            d["stratagems"][k]["orders"] = ["hold", "fallback"]
-        editor.apply(self.cfg, self.facts, [{"path": DOC, "data": d}], "no strike")
-        ids = {x["id"] for x in mapgraph.build(self.cfg, "spart")["nodes"]}
-        self.assertNotIn("opt:strike", ids)
-        self.assertIn("opt:hold", ids)
 
     def test_live_note_names_doctrine(self):
         d = self.doc()

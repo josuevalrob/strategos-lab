@@ -385,16 +385,6 @@ def load(cfg: config.Config) -> CodeFacts:
     return facts
 
 
-def snippet(cfg: config.Config, fkey: str, line: int, before: int = 6, after: int = 14) -> dict:
-    rel = config.CODE_FILES.get(fkey)
-    if not rel:
-        raise KeyError(fkey)
-    lines = cfg.path(rel).read_text(encoding="utf-8").split("\n")
-    lo = max(1, int(line) - before)
-    hi = min(len(lines), int(line) + after)
-    return {"file": fkey, "path": rel, "line": int(line), "from": lo,
-            "lines": [{"n": n, "text": lines[n - 1]} for n in range(lo, hi + 1)]}
-
 
 def play_token(part_kind: str, choice: str, tower: str | None = None) -> str:
     """head.js playToken for a part's own option."""

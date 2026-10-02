@@ -106,3 +106,18 @@ One place where Josue can **see** how Jev is set up and how it behaved in a game
 
 ## Open questions
 - None blocking. See PLAN.md.
+
+## Pipe view (2026-10-02, v2) — replaces the mvp1 Map
+- One lane per block file (`blocks/*.json`): game facts → option filters (+ pending) →
+  context steps (block "context" list, in order) → wording → model → answer → actor
+  (send → rlgame clock → "strategos-request" → strategos AI → Petra addPlan) → acks →
+  back into pending. Shared nodes drawn once; each node shows its params and, on click,
+  file:line + snippet.
+- Built only by reading the files (JSON, Python ast, JS regex); nothing hand-written.
+- Live: server polls mtimes every 1 s; page updates over SSE without reload; a new block
+  file = a new lane. A block without "context" shows its lane without steps.
+- Optional overlay: newest run's last question per block (offered, dropped + reasons,
+  answer, applied/started/finished).
+- Plain 2D SVG, fixed columns, lab theme, readable at 1440 px. The old mvp1 Map (3D,
+  mapgraph, code anchors, warnings) is removed.
+

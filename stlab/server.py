@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ask, stats, clone, code, config, editor, gitops, map3d, mapgraph, models, prompts, qa, runs
+from . import ask, stats, clone, code, config, editor, gitops, models, pipe, prompts, qa, runs
 
 STATIC = config.LAB_ROOT / "static"
 
@@ -25,6 +25,7 @@ class Lab:
         self.registry = runs.Registry(cfg)
         self.write_lock = threading.Lock()
         self.asker = ask.Asker(cfg.repo)
+        self.pipe = pipe.Watch(cfg, self.registry)
 
     def facts(self) -> code.CodeFacts:
         return code.load(self.cfg)
@@ -39,8 +40,7 @@ class Lab:
         return {"repo": str(cfg.repo), "branch": gitops.branch(cfg.repo),
                 "required_branch": cfg.required_branch, "head": gitops.head(cfg.repo, short=True),
                 "dirty_qa": gitops.status_of(cfg.repo, paths), "live_runs": live,
-                "live_note": editor.live_note(cfg, live, editor.pinned_of(cfg, live)) if live else None,
-                "code_errors": self.facts().errors}
+                "live_note": editor.live_note(cfg, live, editor.pinned_of(cfg, live)) if live else None}
 
     def files(self, q):
         cfg = self.cfg
@@ -87,18 +87,8 @@ class Lab:
             out["known_options"] = known
         return out
 
-    def map(self, q):
-        return mapgraph.build(self.cfg, _one(q, "civ", "spart"))
-
-    def map3d(self, q):
-        return map3d.build(self.cfg, _one(q, "civ", "spart"))
-
-    def source(self, q):
-        fkey = _one(q, "file")
-        if fkey not in config.CODE_FILES:
-            raise editor.Refused("path", f"unknown code file {fkey!r}")
-        return code.snippet(self.cfg, fkey, int(_one(q, "line", "1")),
-                            int(_one(q, "before", "6")), int(_one(q, "after", "16")))
+    def pipe_now(self, q):
+        return self.pipe.current()
 
     def runs(self, q):
         return {"runs": [m.info(self.cfg.live_window_s) for m in self.registry.all()]}
@@ -133,9 +123,6 @@ class Lab:
             raise editor.Refused("not_found", f"no row {idx} in {m.id}")
         facts = self.facts()
         res = prompts.in_out(self.cfg, m, idx, facts)
-        graph = mapgraph.build(self.cfg, (res["entry"] and _civ_of(m, idx)) or "spart")
-        ids = {n["id"] for n in graph["nodes"]}
-        res["map_path"] = map_path(res["entry"], ids, graph["edges"])
         return res
 
     def stats(self, q):
@@ -278,66 +265,10 @@ def _one(q: dict, key: str, default: str | None = None) -> str:
     return v[0]
 
 
-def _civ_of(m: runs.RunModel, idx: int) -> str | None:
-    row = m.row(idx)
-    return runs.civ_of(m.header_of(row), row.get("player"))
 
 
-def map_path(entry: dict, ids: set, edges: list | None = None) -> dict:
-    """The map nodes a question lit up: parts asked, options offered, the chosen path."""
-    kind = entry.get("kind")
-    game_choice = (entry.get("game") or {}).get("choice") or entry.get("choice")
-    parts, offered, chosen, rule = [], [], None, None
-
-    def tok(o):
-        if kind in code.PART_TOKENS:
-            return code.play_token(kind, o, "<tower>")
-        return o
-
-    if kind == "play":
-        for p in entry.get("trigger") or []:
-            if f"part:{p['part']}" in ids:
-                parts.append(f"part:{p['part']}")
-        for o in entry.get("options") or []:
-            if o in ("advance", "train:workers", "train:soldiers") and "part:petra" not in parts:
-                parts.append("part:petra")
-    elif f"part:{kind}" in ids:
-        parts.append(f"part:{kind}")
-    elif kind == "opponent_class":
-        parts.append("in:opponent")
-    for o in entry.get("options") or []:
-        nid = mapgraph.option_node_id(tok(o), ids)
-        if nid:
-            offered.append(nid)
-    if game_choice:
-        chosen = mapgraph.option_node_id(tok(game_choice), ids)
-    if entry.get("rule"):
-        rule = mapgraph.option_node_id(tok(entry["rule"]), ids)
-    applied = (entry.get("game") or {}).get("applied") or {}
-    act, mgrs = None, []
-    order = applied.get("order")
-    if order and f"act:{order}" in ids:
-        act = f"act:{order}"
-    elif order and chosen:
-        # An L3 line names the order only ("hold"): the action the chosen option leads to.
-        for e in edges or []:
-            if e["source"] == chosen and e["target"].endswith("/" + order):
-                act = e["target"]
-                break
-    elif chosen in ("opt:advance", "opt:train:workers", "opt:train:soldiers"):
-        act = "act:" + chosen[4:]
-    elif chosen == "opt:economy":
-        act = "act:economy"
-    for m_ in applied.get("managers") or []:
-        if f"mgr:{m_}" in ids:
-            mgrs.append(f"mgr:{m_}")
-    return {"parts": parts, "offered": offered, "chosen": chosen, "rule": rule, "action": act,
-            "managers": mgrs, "on_map": kind == "play" or bool(parts)}
-
-
-GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file", "/api/map": "map",
-              "/api/map3d": "map3d",
-              "/api/source": "source", "/api/runs": "runs", "/api/timeline": "timeline",
+GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file",
+              "/api/pipe": "pipe_now", "/api/runs": "runs", "/api/timeline": "timeline",
               "/api/live": "live", "/api/question": "question", "/api/models": "models", "/api/stats": "stats",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
               "/api/civcodes": "civcodes"}
@@ -394,6 +325,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self._json(403, {"ok": False, "error": "bad Host"})
         url = urlparse(self.path)
+        if url.path == "/api/pipe/events":
+            return self._sse(parse_qs(url.query))
         if url.path in GET_ROUTES:
             return self._call(getattr(self.lab, GET_ROUTES[url.path]), parse_qs(url.query))
         if url.path in ("/", "/index.html"):
@@ -421,6 +354,25 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             return self._json(400, {"ok": False, "error": "body must be an object"})
         self._call(getattr(self.lab, POST_ROUTES[url.path]), body)
+
+    def _sse(self, q):
+        """The pipe, pushed each time it changes (Server-Sent Events); a comment every 15 s."""
+        rev = int((q.get("rev") or ["0"])[0] or 0)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            while True:
+                data = self.lab.pipe.wait(rev, timeout=15.0)
+                if data is None:
+                    self.wfile.write(b": keepalive\n\n")
+                else:
+                    rev = data["rev"]
+                    self.wfile.write(b"data: " + json.dumps(data, default=str).encode("utf-8") + b"\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def _static(self, rel: str):
         path = (STATIC / rel).resolve()

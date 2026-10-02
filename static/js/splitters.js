@@ -6,8 +6,6 @@
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
   function refit() {
     var V = Lab.views && Lab.views.game;
-    if (V && V.graph && V.graph.fit) V.graph.fit();
-    if (V && V.graph3 && V.graph3.resize) V.graph3.resize();
   }
   function drag(handle, onMove) {
     handle.addEventListener("pointerdown", function (ev) {

@@ -750,9 +750,7 @@
         return Lab.post("/api/clone", { src: from.value, dst: to.value, name: name.value || null }).then(function (res) {
           Lab.toast("Committed " + res.short + ": " + res.message);
           Lab.refreshInfo();
-          if (Lab.views.map) Lab.views.map.loaded = null;
           V.loadFiles();
-          Lab.show("map", { civ: to.value });
         });
       });
     }).catch(function (e) { Lab.toast(e.message, true); });

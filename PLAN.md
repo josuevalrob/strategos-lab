@@ -69,6 +69,12 @@ Accept: 12c-1 Jev-live vs Laya-live runs side by side.
 can't work there (hero templates missing, orders the civ can't do).
 Accept: clone to Romans lists its issues; files committed.
 
+**P1 — Pipe view (v2, 2026-10-02, done).** `stlab/pipe.py` + `static/js/pipe.js`;
+mvp1 Map, 3D, mapgraph, code anchors, Cytoscape removed (the Game tab's hidden mini-map
+with them). Accept: Pipe tab shows 3 lanes; an edited block "context" list / new block file
+shows in ≤2 s without reload (checked: new lane 0.3 s, context edit 0.9 s, temp block
+file, then removed).
+
 **Later (not planned yet):** follow-up questions (answer → next question). Needs game-side
 (JS) support; design when Josue asks.
 

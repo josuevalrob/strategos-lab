@@ -4,7 +4,7 @@
 var Lab = window.Lab = {
   views: {},
   info: null,
-  state: { tab: "map" }
+  state: { tab: "pipe" }
 };
 
 Lab.esc = function (s) {
@@ -146,8 +146,6 @@ Lab.refreshInfo = function () {
     var msgs = [];
     if (info.branch !== info.required_branch)
       msgs.push("The 0 A.D. repo is on " + info.branch + ": Apply / Restore / Clone are refused until it is on " + info.required_branch + ".");
-    if ((info.code_errors || []).length)
-      msgs.push("The map's code anchors no longer match head.js: " + info.code_errors.join("; "));
     var banner = document.getElementById("banner");
     banner.textContent = msgs.join("  ");
     banner.className = "banner" + (msgs.length ? " err" : " hidden");
@@ -170,5 +168,6 @@ Lab.start = function () {
   Object.keys(Lab.views).forEach(function (k) { if (Lab.views[k].init) Lab.views[k].init(); });
   Lab.refreshInfo();
   setInterval(Lab.refreshInfo, 10000);
-  Lab.show(Lab.store.get("lab.tab", "map"));
+  var tab = Lab.store.get("lab.tab", "pipe");
+  Lab.show(Lab.views[tab] ? tab : "pipe");
 };

@@ -4,15 +4,11 @@
 (function () {
   var V = Lab.views.game = {
     runs: [], run: null, runInfo: null, kind: null, entries: {}, order: [], rev: 0,
-    selected: null, live: false, follow: true, timer: null, graph: null, graphCiv: null,
+    selected: null, live: false, follow: true, timer: null,
     ioTab: "prompt", lastIo: null, busy: false
   };
 
   V.init = function () {
-    V.graph = new Lab.Graph(document.getElementById("game-cy"), {
-      zoomToPath: true,
-      onSelect: function (n) { Lab.show("map", { civ: V.graphCiv, node: n.id }); }
-    });
     document.getElementById("game-run").addEventListener("change", function (e) {
       V.open(e.target.value, null);
     });
@@ -26,37 +22,6 @@
     var follow = document.getElementById("game-follow");
     follow.addEventListener("change", function () { V.follow = follow.checked; });
     V.kind = Lab.store.get("lab.game.kind", "play");
-    // The mini map in 2D or 3D (the timeline's path lights up in both).
-    V.graph3 = new Lab.Graph3D(document.getElementById("game-3d"), {
-      zoomToPath: true,
-      onSelect: function (n) { Lab.show("map", { civ: V.graphCiv, node: n.id }); }
-    });
-    document.querySelectorAll("#game-dim button").forEach(function (b) {
-      b.addEventListener("click", function () { V.setDim(b.dataset.d); });
-    });
-    V.dim = Lab.store.get("lab.game.dim", "2d");
-    V.setDim(V.dim);
-  };
-
-  V.setDim = function (dim) {
-    V.dim = dim;
-    Lab.store.set("lab.game.dim", dim);
-    document.querySelectorAll("#game-dim button").forEach(function (b) { b.classList.toggle("on", b.dataset.d === dim); });
-    document.getElementById("game-cy").classList.toggle("hidden", dim !== "2d");
-    document.getElementById("game-3d").classList.toggle("hidden", dim !== "3d");
-    if (dim === "2d") { V.graph.fit(); return; }
-    V.show3d();
-  };
-
-  /* Load the 3D mini map for the run's civ (once per civ) and light the current path. */
-  V.show3d = function () {
-    if (V.dim !== "3d" || !V.graphCiv) return;
-    var civ = V.graphCiv;
-    var done = function () { if (V.lastIo) V.graph3.highlight(V.lastIo.map_path); };
-    if (V.graph3Civ === civ) { V.graph3.resize(); done(); return; }
-    Lab.get("/api/map3d", { civ: civ }).then(function (data) {
-      return V.graph3.load(data).then(function () { V.graph3Civ = civ; done(); });
-    }).catch(function (e) { Lab.toast("3D map: " + e.message, true); });
   };
 
   V.shown = function () {
@@ -67,8 +32,6 @@
           V.runs.filter(function (r) { return r.id === saved; })[0] ||
           V.runs.filter(function (r) { return r.id.indexOf("phase12c2-jev-live") >= 0; })[0] || V.runs[0];
         if (pick) V.open(pick.id, null);
-      } else {
-        V.graph.fit();
       }
     });
     V.startPolling();
@@ -79,9 +42,6 @@
     var s = ((V.runInfo && V.runInfo.seats) || []).filter(function (x) { return x.id === player; })[0];
     return s ? s.label : "p" + player;
   };
-
-  V.mapStale = function () { V.graphCiv = null; V.graph3Civ = null; };
-  V.onTheme = function () { V.graph.restyle(); V.graph3.restyle(); };
 
   V.loadRuns = function () {
     return Lab.get("/api/runs").then(function (res) {
@@ -121,8 +81,6 @@
     V.entries = {}; V.order = []; V.rev = 0; V.selected = null;
     document.getElementById("timeline").innerHTML = "";
     document.getElementById("io-panel").innerHTML = '<p class="muted">Pick a question on the left.</p>';
-    V.graph.clearHighlight();
-    if (V.graph3) V.graph3.clearHighlight();
   };
 
   V.reload = function () {
@@ -158,7 +116,6 @@
         V.busy = false;
         return V.reload();
       }
-      V.ensureMap(res.run);
       var fresh = [];
       res.entries.forEach(function (e) {
         if (!V.entries[e.idx]) fresh.push(e.idx);
@@ -201,21 +158,6 @@
       return '<option value="' + Lab.esc(k) + '"' + (k === V.kind ? " selected" : "") + ">" + Lab.esc(k) + " (" + kinds[k] + ")</option>";
     }).join("") + '<option value="all"' + (V.kind === "all" ? " selected" : "") + ">all kinds</option>";
     if (sel.innerHTML !== html) sel.innerHTML = html;
-  };
-
-  V.ensureMap = function (run) {
-    var civ = "spart";
-    (run.players || []).forEach(function (p) { if (String(p.ai || "").indexOf("strategos") === 0) civ = p.civ || civ; });
-    if (V.graphCiv === civ) return;
-    V.graphCiv = civ;
-    Lab.get("/api/map", { civ: civ }).then(function (data) {
-      V.graph.load(data);
-      if (V.lastIo) V.graph.highlight(V.lastIo.map_path);
-      V.show3d();
-    }).catch(function () {
-      V.graphCiv = null;
-      document.getElementById("game-cy").innerHTML = '<p class="muted" style="padding:12px">No civ file for ' + Lab.esc(civ) + ": no map.</p>";
-    });
   };
 
   V.status = function () {
@@ -282,8 +224,6 @@
     Lab.get("/api/question", { run: V.run, idx: idx }).then(function (res) {
       if (V.selected !== idx) return;
       V.lastIo = res;
-      V.graph.highlight(res.map_path);
-      if (V.dim === "3d") V.show3d();
       V.renderIo(res);
     }).catch(function (e) { panel.innerHTML = '<p class="pill err">' + Lab.esc(e.message) + "</p>"; });
   };
@@ -383,8 +323,7 @@
     var h = [];
     h.push('<div class="io-head"><h3>q#' + e.qid + " · " + Lab.esc(e.kind) + "</h3>" +
       '<span class="muted">minute ' + Lab.esc(e.minute) + " · " + Lab.esc(V.seat(e.player)) + "</span>" + modePill +
-      (res.map_path && !res.map_path.on_map ? '<span class="pill">not on the play map (raid / separate question)</span>' : "") +
-      '<span class="spacer"></span><button class="btn tiny js-map">Open on the Map</button></div>');
+      "</div>");
     h.push('<dl class="kv">' +
       "<dt>Why asked</dt><dd>" + (trig || "-") + "</dd>" +
       "<dt>Offered</dt><dd>" + e.options.map(function (o) { return '<span class="opt' + (o === used ? " chosen" : "") + (o === e.rule ? " rule" : "") + '">' + Lab.esc(o) + "</span>"; }).join("") + "</dd>" +
@@ -401,9 +340,6 @@
     }).join("") + '</div><div class="js-io"></div>');
     var panel = document.getElementById("io-panel");
     panel.innerHTML = h.join("");
-    panel.querySelector(".js-map").addEventListener("click", function () {
-      Lab.show("map", { civ: V.graphCiv, node: (res.map_path && res.map_path.chosen) || "q:play" });
-    });
     function tab(t) {
       V.ioTab = t;
       panel.querySelectorAll(".io-tabs button").forEach(function (b) { b.classList.toggle("on", b.dataset.t === t); });

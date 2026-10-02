@@ -8,7 +8,7 @@ import unittest
 import fixture
 from fixture import git
 
-from stlab import clone, code, config, editor, mapgraph, qa
+from stlab import clone, code, config, editor, qa
 
 
 class CloneTest(unittest.TestCase):
@@ -61,11 +61,6 @@ class CloneTest(unittest.TestCase):
         self.assertIn("[cannot work] hero building structures/rome/gerousia does not exist", body)
         self.assertIn(" M unrelated.txt", git(self.repo, "status", "--porcelain", "--untracked-files=no"))
         self.assertTrue(res["issues"])
-        g = mapgraph.build(self.cfg, "rome")
-        bad = {n["id"] for n in g["nodes"] if n.get("bad")}
-        self.assertIn("opt:hero:hero_agis", bad)
-        self.assertIn("rome", g["civs"])
-        self.assertTrue(any("gerousia" in w for w in g["warnings"]))
 
     def test_refusals(self):
         self.assertFalse(clone.preview(self.cfg, self.facts, "spart", "spart")["ok"])

@@ -5,10 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Strategos Lab</title>
 <link rel="stylesheet" href="/static/style.css">
-<script type="importmap">
-  { "imports": { "three": "/static/vendor/three/three.module.js",
-                 "three-spritetext": "/static/vendor/three-spritetext.mjs" } }
-</script>
 <script>
   // Theme before paint: saved choice, else the system's.
   (function () {
@@ -23,7 +19,7 @@
 <header class="topbar">
   <div class="brand">Strategos Lab</div>
   <nav class="tabs" role="tablist">
-    <button class="tab" data-tab="map" role="tab">Map</button>
+    <button class="tab" data-tab="pipe" role="tab">Pipe</button>
     <button class="tab" data-tab="game" role="tab">Game</button>
     <button class="tab" data-tab="models" role="tab">Models</button>
     <button class="tab" data-tab="edit" role="tab">Edit</button>
@@ -37,26 +33,19 @@
 <div id="banner" class="banner hidden"></div>
 
 <main>
-  <!-- MAP -------------------------------------------------------------------->
-  <section id="view-map" class="view">
+  <!-- PIPE: one lane per block file, read from the 0 A.D. files, live ---------->
+  <section id="view-pipe" class="view">
     <div class="toolbar">
-      <div class="seg" id="map-dim" title="3D: what the model reads on one plane, what it can pick on the other">
-        <button data-d="3d">3D</button><button data-d="2d">2D</button></div>
-      <label>Civ <select id="map-civ"></select></label>
-      <button id="map-clone" class="btn" title="Start a new civ from this one">+ New civ</button>
-      <button id="map-fit" class="btn ghost">Fit</button>
-      <span class="legend legend3d hidden" id="map-legend3d"></span>
-      <span class="legend legend2d">
-        <i class="lg input"></i>input <i class="lg part"></i>why asked <i class="lg option"></i>play option
-        <i class="lg action"></i>Petra action <i class="lg manager"></i>manager / queue
-        <i class="lg bad"></i>cannot work
-      </span>
-      <span id="map-warn" class="warn-count"></span>
+      <strong>Pipe</strong>
+      <span class="muted small">one lane per block file · game facts → filters → context → wording → model → answer → actor → acks → pending</span>
+      <span class="spacer"></span>
+      <label class="check" title="Overlay the newest run's last question per block"><input type="checkbox" id="pipe-overlay" checked> newest run</label>
+      <span id="pipe-status" class="muted small"></span>
     </div>
-    <div class="split">
-      <div id="map-cy" class="cy"></div>
-      <div id="map-3d" class="cy g3d hidden"></div>
-      <aside id="map-detail" class="detail"><p class="muted">Click a node to see where it comes from.</p></aside>
+    <div id="pipe-errors" class="pipe-errors hidden"></div>
+    <div class="pipe-wrap">
+      <div id="pipe-canvas" class="pipe-canvas"></div>
+      <aside id="pipe-panel" class="pipe-panel hidden"></aside>
     </div>
   </section>
 
@@ -81,9 +70,6 @@
       <div class="right-pane">
         <div class="mini-wrap">
           <div id="game-stats" class="stats-panel"></div>
-          <div id="game-cy" class="cy mini"></div>
-          <div id="game-3d" class="cy mini g3d hidden"></div>
-          <div class="seg mini-bar" id="game-dim"><button data-d="2d" class="on">2D</button><button data-d="3d">3D</button></div>
         </div>
         <div class="hsplit" id="game-hsplit" title="Drag up / down"></div>
         <div id="io-panel" class="io-panel"><p class="muted">Pick a question on the left.</p></div>
@@ -140,11 +126,8 @@
 </dialog>
 <div id="toast" class="toast hidden"></div>
 
-<script src="/static/vendor/cytoscape.min.js"></script>
 <script src="/static/js/app.js"></script>
-<script src="/static/js/graph.js"></script>
-<script src="/static/js/map3d.js"></script>
-<script src="/static/js/mapview.js"></script>
+<script src="/static/js/pipe.js"></script>
 <script src="/static/js/game.js"></script>
 <script src="/static/js/splitters.js"></script>
 <script src="/static/js/stats.js"></script>

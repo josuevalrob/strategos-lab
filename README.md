@@ -5,8 +5,7 @@ A local tool to **see** how Jev / Laya are asked in the Strategos project (0 A.D
 reading code or logs. It reads the 0 A.D. repo and its run results; it writes only the
 Q&A files you edit, and commits only those.
 
-Needs: Python 3.12+ (stdlib only; developed on 3.14), git. Cytoscape.js (MIT) is vendored in
-`static/vendor/`. Nothing to install.
+Needs: Python 3.12+ (stdlib only; developed on 3.14), git. Nothing to install, nothing vendored.
 
 ## Start
 
@@ -23,26 +22,29 @@ a game is running.
 
 ## The views
 
-**Map** (one civ; Spartans today). Five columns:
-inputs (civ file, every hero file, the game state, the opponent read) →
-*why asked* (the parts of the play question: playbook order with and without a pass,
-hero_next, tower_site, garrison_now, wall_now, Petra's own orders) →
-the **play options** inside the `play` question box (economy, hold / strike / fallback,
-fortify / garrison / standdown, hero:&lt;x&gt;, tower:&lt;site&gt;, garrison:&lt;tower&gt;, wall,
-advance, train:workers, train:soldiers) → the **Petra action** (stratagem/order) →
-the **Petra managers or queues** that carry it out.
-Click any node: what it is, what the model reads for it (criteria text, civ/hero lines),
-when it is asked, and chips `head.js:1574 hero_offer` that open the source lines.
-An **Edit** button jumps to the file (for an option: its criteria row in `play.json`).
-Red dashed nodes cannot work as they stand (e.g. a hero with no template for that civ).
-`+ New civ` starts the clone flow (below).
+**Pipe** (default tab). One lane per block file (`blocks/*.json`), left to right:
+game facts (the mod's `StrategosReaders_*.js` domains) → option filters (`rules.py` RULES,
+in order, plus *pending*) → context steps (the block's `"context"` list, in order; step
+code in `asker/context/steps.py`) → wording (the block's `"questions"`) → model
+(`asker/models/`) → answer. Below, right to left, the actor track: `actor.send`
+(transports) → rlgame clock → `"strategos-request"` command → strategos AI
+(`takeRequest`) → Petra `minorTech.addPlan` → acknowledgements → back into each lane's
+*pending* filter. Shared nodes (readers, the context steps every lane starts with,
+models, actor) are drawn once, with one coloured line per lane.
+Everything is read from the files (JSON as JSON, Python with `ast`, JS with small
+regexes); nothing is hand-kept. The server polls the files' mtimes every second and
+pushes a new graph over SSE (`/api/pipe/events`): an edited `"context"` list, a new
+step, a new block file shows within ~1 s, no reload; changed nodes flash.
+A missing step / class / handler shows as a red dashed node or a lane warning.
+Click a node: file:line and the code or JSON around it (plus an Edit button for block files).
+*newest run* overlays the newest run's last question per block: the lines offered, the
+lines each filter dropped and why (re-run with `rules.py` on the logged facts), the
+answer, model, outcome and applied / started / finished from `engine.log`, and a later
+"not asked" minute from `asker.log`.
 
-**Game** (a run, after or during a game). Pick a run and a question kind (default
-`play`). Each row: game minute and q#, why it was asked (the events, in words),
+**Game** (a run, after or during a game). Pick a run and a question kind. Each row: game minute and q#, why it was asked (the events, in words),
 the options (rule's pick underlined, the option the game used filled, with p),
 and what Petra did (from `engine.log`). Click a row:
-- the map above lights the path: parts asked, options offered, the chosen option,
-  the Petra action and managers; everything else greys out;
 - the **In → out** panel: prompt, request, raw reply, and the `engine.log` lines.
   L3 runs show the **exact** logged prompt / request / reply. Older runs show the
   prompt **rebuilt** with the advisor's own code and Q&A files as of the run's commit
@@ -51,7 +53,7 @@ and what Petra did (from `engine.log`). Click a row:
   if that commit is gone it says **rebuilt from current files**. For an L3 run the
   rebuild also lays the run's `qa_snapshot` over the commit (it equals the exact prompt).
 - **Live (newest run)**: follows the newest run, polling every 2 s; new questions appear
-  and (with *follow newest question*) light up the map. A new game switches over by itself.
+  (with *follow newest question* selected). A new game switches over by itself.
 
 How "Petra did" is read: the L3 line `pP q#N applied <choice> -> <order> via <managers>`
 when there is one (a repeated order says `-> none`: not re-sent); else the q#-tagged
@@ -155,24 +157,25 @@ copies of the real files (`tests/fixture.py`). The real repo is only read (`git 
 ```
 lab.py              entry point
 stlab/config.py     paths in the 0 A.D. repo
-stlab/code.py       head.js parsers + the hand-kept parts/actions table with anchors
-stlab/mapgraph.py   L1 map
+stlab/code.py       head.js parsers (editor validation, clone)
+stlab/pipe.py       Pipe view: graph from the 0AD files, mtime watcher, overlay
 stlab/runs.py       L2/L6 runs, advisor log + engine.log join, incremental tail
 stlab/prompts.py    L4 exact / rebuilt prompts
 stlab/editor.py     L5 validation (incl. doctrine.json), apply, history, diff, restore
 stlab/clone.py      L8 clone a civ
 stlab/models.py     L7 models over time
 stlab/server.py     HTTP server + JSON API
-static/             index.html, style.css, js/*.js, vendor/cytoscape.min.js
+static/             index.html, style.css, js/*.js
 tests/              unittest suite + fixture builder
 ```
 
 ## Known limits
 
-- The map is the play flow (12c-2 on). Raid questions (raid_target, raid_return,
-  camp_move, rams_tower) show on the timeline, not on the map.
-- Why each part is asked is a hand-kept table (`stlab/code.py`). The anchor test catches
-  moved or rewritten lines, not a changed meaning.
+- Pipe: the actor hops and the ack states are found by regex in `loop.py`, `clock.py`,
+  `StrategosCommands.js`, `_strategosbot.js`, `requests.js`; a rewrite that drops the
+  pattern shows the node red ("not found"), it does not invent one. Filters are drawn for
+  kinds whose question module uses `rules.`; other kinds show "no filters".
+- The old mvp1 Map (play flow, 3D view, code anchors) was removed 2026-10-02.
 - Old runs: heroes alive / fallen are not logged, so a rebuilt play prompt assumes none;
   the length check says when that was wrong. Their raw reply was never logged (the
   logged probabilities are shown instead). Repeated orders are "unknown".

@@ -115,13 +115,6 @@ class RealHeadJsTest(unittest.TestCase):
         for aid, line in near.items():
             self.assertLess(abs(self.facts.anchors[aid]["line"] - line), 40, aid)
 
-    def test_snippet(self):
-        s = code.snippet(real_config(), "head.js", self.facts.anchors["order_routes"]["line"])
-        hit = [x for x in s["lines"] if x["n"] == s["line"]][0]
-        self.assertIn("ORDER_ROUTES", hit["text"])
-        with self.assertRaises(KeyError):
-            code.snippet(real_config(), "../etc/passwd", 1)
-
 
 if __name__ == "__main__":
     unittest.main()
