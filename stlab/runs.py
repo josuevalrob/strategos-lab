@@ -181,8 +181,9 @@ def _chain_summary(row: dict) -> dict | None:
     chain, parent, ev = row.get("chain"), row.get("parent"), row.get("event_chain")
     if ev and ev.get("router"):
         target = ev.get("leaf") or ev.get("persona")
+        name = "Gatekeeper" if ev["router"] in ("gatekeeper", 2) else f"router {ev['router']}"
         return {"state": "routed", "order": None, "managers": [],
-                "text": f"router {ev['router']} ({ev.get('id')}): {row.get('choice') or 'no answer'} for {target}"}
+                "text": f"{name} ({ev.get('id')}): {row.get('choice') or 'no answer'} for {target}"}
     if row.get("outcome") == "decided" and chain:
         child = (row.get("choice") or "?").split(":", 1)[0]
         return {"state": "decided", "order": None, "managers": [],

@@ -329,8 +329,8 @@
       (e.event_chain ? "<dt>Chain</dt><dd><code>" + Lab.esc(e.event_chain.id) + "</code> " + Lab.esc(e.event_chain.event || "") +
         (e.event_chain.persona ? " → " + Lab.esc(e.event_chain.persona) : "") +
         (e.event_chain.router1_qid ? " (router 1 q#" + e.event_chain.router1_qid + ")" : "") +
-        (e.event_chain.router2_qid ? " → " + Lab.esc(e.kind) + " (router 2 q#" + e.event_chain.router2_qid + ")" : "") +
-        (e.event_chain.router ? " · router " + e.event_chain.router + (e.event_chain.leaf ? " for " + Lab.esc(e.event_chain.leaf) : "") : "") +
+        ((e.event_chain.gatekeeper_qid || e.event_chain.router2_qid) ? " → " + Lab.esc(e.kind) + " (Gatekeeper q#" + (e.event_chain.gatekeeper_qid || e.event_chain.router2_qid) + ")" : "") +
+        (e.event_chain.router ? " · " + ((e.event_chain.router === "gatekeeper" || e.event_chain.router === 2) ? "Gatekeeper" : "router " + Lab.esc(e.event_chain.router)) + (e.event_chain.leaf ? " for " + Lab.esc(e.event_chain.leaf) : "") : "") +
         "</dd>" : "") +
       "<dt>Offered</dt><dd>" + e.options.map(function (o) { return '<span class="opt' + (o === used ? " chosen" : "") + (o === e.rule ? " rule" : "") + '">' + Lab.esc(o) + "</span>"; }).join("") + "</dd>" +
       "<dt>Rule's pick</dt><dd><code>" + Lab.esc(e.rule) + "</code> <span class=\"muted small\">(the default if no answer comes in time)</span></dd>" +
