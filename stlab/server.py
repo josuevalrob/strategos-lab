@@ -153,11 +153,31 @@ class Lab:
                 "civ_files": [c["civ"] for c in qa.list_files(self.cfg)["civs"]]}
 
     # -- POST ---------------------------------------------------------------
+    def _goal_prompt(self, run, idx, goal):
+        """A v2 row's prompt rebuilt with a parent's goal typed by hand (asker/rebuild.py)."""
+        m = self._run({"run": [str(run or "")]})
+        i = int(idx)
+        if not 0 <= i < len(m.rows):
+            raise editor.Refused("not_found", f"no row {i} in {m.id}")
+        return self.asker.rebuild(m.dir, m.rows[i], goal)
+
+    def prompt(self, q):
+        """GET /api/prompt?run=&idx=&goal=: the prompt with that goal, no model asked."""
+        return self._goal_prompt(_one(q, "run"), _one(q, "idx"), _one(q, "goal", "") or None)
+
     def p_ask(self, body):
         res = self.question({"run": [str(body.get("run") or "")], "idx": [str(body.get("idx"))]})
         qs = body.get("questions")
-        return ask_ok(self.asker.ask(str(body.get("model")), res, body.get("prompt") or None,
-                                     qs if isinstance(qs, dict) else None))
+        prompt, goal = body.get("prompt") or None, body.get("goal") or None
+        if goal and not prompt:
+            r = self._goal_prompt(body.get("run"), body.get("idx"), goal)
+            if not r.get("ok"):
+                return ask_ok(r)
+            prompt = r["prompt"]
+        out = self.asker.ask(str(body.get("model")), res, prompt, qs if isinstance(qs, dict) else None)
+        if goal:
+            out["goal"], out["prompt"] = goal, prompt
+        return ask_ok(out)
 
     def p_try_files(self, body):
         """Rebuild the prompts of some questions with edited Q&A files (temp copy only), ask
@@ -269,7 +289,7 @@ def _one(q: dict, key: str, default: str | None = None) -> str:
 
 GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file",
               "/api/pipe": "pipe_now", "/api/runs": "runs", "/api/timeline": "timeline",
-              "/api/live": "live", "/api/question": "question", "/api/models": "models", "/api/stats": "stats",
+              "/api/live": "live", "/api/question": "question", "/api/prompt": "prompt", "/api/models": "models", "/api/stats": "stats",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
               "/api/civcodes": "civcodes"}
 POST_ROUTES = {"/api/ask": "p_ask", "/api/try_files": "p_try_files", "/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",

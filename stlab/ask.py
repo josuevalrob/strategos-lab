@@ -68,6 +68,16 @@ def _first(answers) -> dict:
     return {"choice": None, "probabilities": {}}
 
 
+REBUILD = r'''
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from asker.rebuild import question_at
+req = json.loads(sys.stdin.read())
+t = question_at(req["run_dir"], req["player"], req["qid"], req["minute"], req["options"], req.get("goal"))
+print(json.dumps({"prompt": t.state if t else None}))
+'''
+
+
 class _Worker:
     def __init__(self):
         self.proc = None
@@ -133,6 +143,23 @@ class Asker:
             return {"ok": False, "error": (stdout or "no output").strip()[-400:]}
         out.update(_first(out.get("answers")))
         return out
+
+    def rebuild(self, run_dir, row: dict, goal=None) -> dict:
+        """The row's prompt rebuilt by the asker's own pipe from the run's engine.log
+        (asker/rebuild.py), plus ``goal`` ({"from", "text"} or text) through the
+        "goal" context step.  No model is asked."""
+        feats = row.get("features") or {}
+        req = {"run_dir": str(run_dir), "player": int(row.get("player") or 1), "qid": row.get("kind"),
+               "minute": feats.get("game_minute"), "options": list(row.get("options") or []), "goal": goal}
+        p = subprocess.run([sys.executable, "-c", REBUILD, self.tools], input=json.dumps(req),
+                           capture_output=True, text=True, cwd=self.tools, timeout=120)
+        try:
+            out = json.loads(p.stdout.strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError):
+            return {"ok": False, "error": (p.stderr or p.stdout or "no output").strip()[-400:]}
+        if not out.get("prompt"):
+            return {"ok": False, "error": "no state line for that minute / question not askable then"}
+        return {"ok": True, "prompt": out["prompt"]}
 
     # -- entry point ------------------------------------------------------------
     def ask(self, model: str, res: dict, prompt: str | None = None, questions: dict | None = None) -> dict:

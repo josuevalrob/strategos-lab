@@ -85,7 +85,7 @@ def get_question(run: str, idx: int) -> dict:
 
 
 def ask(run: str, idx: int, prompt: str | None = None, question: dict | None = None,
-        models: list | None = None) -> dict:
+        models: list | None = None, goal: str | None = None) -> dict:
     models = [m for m in (models or ["jev", "laya"]) if m in ("jev", "laya")]
 
     def one(m):
@@ -94,6 +94,8 @@ def ask(run: str, idx: int, prompt: str | None = None, question: dict | None = N
             body["prompt"] = prompt
         if question:
             body["questions"] = question
+        if goal:
+            body["goal"] = goal
         r = _post("/api/ask", body).get("result") or {}
         return m, {k: r.get(k) for k in ("ok", "choice", "probabilities", "error", "ms", "raw")}
 
@@ -101,7 +103,7 @@ def ask(run: str, idx: int, prompt: str | None = None, question: dict | None = N
         out = dict(ex.map(one, models))
     q = get_question(run, idx)
     out["logged"] = q.get("logged")
-    out["edited"] = {"prompt": bool(prompt), "question": bool(question)}
+    out["edited"] = {"prompt": bool(prompt), "question": bool(question), "goal": goal}
     return out
 
 
@@ -201,9 +203,10 @@ TOOLS = {
                      "(instructions + criteria per option), the logged answer and what Petra did.",
                      {"run": S, "idx": I}, ["run", "idx"]),
     "ask": (ask, "Ask Jev and/or Laya one logged question again, optionally with an edited prompt and/or "
-            "question spec (same shape get_question returns). Returns both answers next to the logged one. "
+            "question spec (same shape get_question returns), or with a parent's goal (v2: the prompt is rebuilt "
+            "by the asker's pipe and the goal step adds it). Returns both answers next to the logged one. "
             "Nothing is saved.", {"run": S, "idx": I, "prompt": S, "question": {"type": "object"},
-                                  "models": MODELS}, ["run", "idx"]),
+                                  "models": MODELS, "goal": S}, ["run", "idx"]),
     "list_files": (list_files, "The Q&A files the prompts are built from (civ, heroes, question specs, "
                    "doctrine), repo-relative paths.", {}, []),
     "get_file": (get_file, "Current text of one Q&A file.", {"path": S}, ["path"]),
