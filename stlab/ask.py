@@ -1,4 +1,6 @@
-"""Ask any model one logged question again, from the In -> out panel.
+"""Ask any model one logged question again, from the In -> out panel.  Several
+questions sent together share one prompt and go to the model in one call (its
+ask_many); then every answer comes back under "answers".
 
 Every model goes through the 0 A.D. repo's own model registry
 (source/tools/strategos/asker/models: jev, laya, ...), the same adapters the live
@@ -33,14 +35,15 @@ for line in sys.stdin:
     req = json.loads(line)
     t0 = time.perf_counter()
     try:
-        answers, raws = {}, []
-        for qid, q in req["questions"].items():
-            a = adapter.ask(models.TypedQuestion(id=qid, state=req["prompt"],
-                                                 instructions=q.get("instructions") or "",
-                                                 criteria=dict(q.get("criteria") or {})))
-            answers[qid] = {"choice": a.choice, "probabilities": a.probabilities}
-            raws.append(a.io.get("raw_reply") or "")
-        out = {"ok": True, "answers": answers, "raw": "\n".join(raws), "model": adapter.version}
+        typed = [models.TypedQuestion(id=qid, state=req["prompt"],
+                                      instructions=q.get("instructions") or "",
+                                      criteria=dict(q.get("criteria") or {}))
+                 for qid, q in req["questions"].items()]
+        got = adapter.ask_many(typed)   # one call when the model takes several questions
+        answers = {qid: {"choice": a.choice, "probabilities": a.probabilities} for qid, a in got.items()}
+        raws = list(dict.fromkeys(a.io.get("raw_reply") or "" for a in got.values()))
+        out = {"ok": True, "answers": answers, "raw": "\n".join(raws), "model": adapter.version,
+               "questions": len(typed)}
     except Exception as exc:
         out = {"ok": False, "error": type(exc).__name__ + ": " + str(exc)}
     out["ms"] = round((time.perf_counter() - t0) * 1000)
@@ -174,7 +177,11 @@ class Asker:
         qs = questions or _questions(io.get("request"))
         if not qs:
             return {"ok": False, "error": "no question spec in the request"}
+        kind = (res.get("entry") or {}).get("kind")
+        if questions is None and len(qs) > 1 and kind in qs:
+            qs = {kind: qs[kind]}   # a row logged from a batched call: re-ask its own question
         out = self._ask_model(model, prompt, qs)
         out["asked"] = model
-        out.pop("answers", None)
+        if len(qs) < 2:           # one question: its choice / probabilities are the answer
+            out.pop("answers", None)
         return out
