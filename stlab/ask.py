@@ -76,8 +76,7 @@ import json, sys
 sys.path.insert(0, sys.argv[1])
 from asker.rebuild import question_at
 req = json.loads(sys.stdin.read())
-t = question_at(req["run_dir"], req["player"], req["qid"], req["minute"], req["options"], req.get("goal"),
-                time_ms=req.get("time_ms"))
+t = question_at(req["run_dir"], req["player"], req["qid"], req["minute"], req["options"], req.get("goal"))
 print(json.dumps({"prompt": t.state if t else None}))
 '''
 
@@ -154,8 +153,7 @@ class Asker:
         "goal" context step.  No model is asked."""
         feats = row.get("features") or {}
         req = {"run_dir": str(run_dir), "player": int(row.get("player") or 1), "qid": row.get("kind"),
-               "minute": feats.get("game_minute"), "time_ms": row.get("askedTime"),
-               "options": list(row.get("options") or []), "goal": goal}
+               "minute": feats.get("game_minute"), "options": list(row.get("options") or []), "goal": goal}
         p = subprocess.run([sys.executable, "-c", REBUILD, self.tools], input=json.dumps(req),
                            capture_output=True, text=True, cwd=self.tools, timeout=120)
         try:
