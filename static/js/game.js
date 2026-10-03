@@ -2,6 +2,15 @@
 "use strict";
 
 (function () {
+
+  // Router names; the fallbacks read runs logged before the rename (router 1 / Gatekeeper).
+  function routerName(r) {
+    if (r === "relevance" || r === 1 || r === "persona") return "Relevance Router";
+    if (r === "question" || r === 2 || r === "gatekeeper") return "Question Router";
+    return "router " + Lab.esc(r);
+  }
+  function relevanceQid(c) { return c.relevance_qid || c.router1_qid; }
+  function questionQid(c) { return c.question_qid || c.gatekeeper_qid || c.router2_qid; }
   var V = Lab.views.game = {
     runs: [], run: null, runInfo: null, kind: null, entries: {}, order: [], rev: 0,
     selected: null, live: false, follow: true, timer: null,
@@ -328,9 +337,9 @@
       "<dt>Why asked</dt><dd>" + (trig || "-") + "</dd>" +
       (e.event_chain ? "<dt>Chain</dt><dd><code>" + Lab.esc(e.event_chain.id) + "</code> " + Lab.esc(e.event_chain.event || "") +
         (e.event_chain.persona ? " → " + Lab.esc(e.event_chain.persona) : "") +
-        (e.event_chain.router1_qid ? " (router 1 q#" + e.event_chain.router1_qid + ")" : "") +
-        ((e.event_chain.gatekeeper_qid || e.event_chain.router2_qid) ? " → " + Lab.esc(e.kind) + " (Gatekeeper q#" + (e.event_chain.gatekeeper_qid || e.event_chain.router2_qid) + ")" : "") +
-        (e.event_chain.router ? " · " + ((e.event_chain.router === "gatekeeper" || e.event_chain.router === 2) ? "Gatekeeper" : "router " + Lab.esc(e.event_chain.router)) + (e.event_chain.leaf ? " for " + Lab.esc(e.event_chain.leaf) : "") : "") +
+        (relevanceQid(e.event_chain) ? " (Relevance Router q#" + relevanceQid(e.event_chain) + ")" : "") +
+        (questionQid(e.event_chain) ? " → " + Lab.esc(e.kind) + " (Question Router q#" + questionQid(e.event_chain) + ")" : "") +
+        (e.event_chain.router ? " · " + routerName(e.event_chain.router) + (e.event_chain.leaf ? " for " + Lab.esc(e.event_chain.leaf) : "") : "") +
         "</dd>" : "") +
       "<dt>Offered</dt><dd>" + e.options.map(function (o) { return '<span class="opt' + (o === used ? " chosen" : "") + (o === e.rule ? " rule" : "") + '">' + Lab.esc(o) + "</span>"; }).join("") + "</dd>" +
       "<dt>Rule's pick</dt><dd><code>" + Lab.esc(e.rule) + "</code> <span class=\"muted small\">(the default if no answer comes in time)</span></dd>" +

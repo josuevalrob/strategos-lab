@@ -175,22 +175,21 @@ def applied_summary(entry: dict | None, choice: str | None = None, kind: str | N
             "order": None, "managers": []}
 
 
+ROUTER_NAMES = {"relevance": "Relevance Router", "question": "Question Router",
+                # read-only fallback for runs logged before the rename
+                1: "Relevance Router", "persona": "Relevance Router",
+                2: "Question Router", "gatekeeper": "Question Router"}
+
+
 def _chain_summary(row: dict) -> dict | None:
-    """A parent's pick (v2 asker/pull.py): which child's row carries the request; a
-    child's answer the parent did not pick.  None for every other row."""
-    chain, parent, ev = row.get("chain"), row.get("parent"), row.get("event_chain")
+    """A router row of the events pipeline: which router answered what, for whom.
+    None for every other row."""
+    ev = row.get("event_chain")
     if ev and ev.get("router"):
         target = ev.get("leaf") or ev.get("persona")
-        name = "Gatekeeper" if ev["router"] in ("gatekeeper", 2) else f"router {ev['router']}"
+        name = ROUTER_NAMES.get(ev["router"], f"router {ev['router']}")
         return {"state": "routed", "order": None, "managers": [],
                 "text": f"{name} ({ev.get('id')}): {row.get('choice') or 'no answer'} for {target}"}
-    if row.get("outcome") == "decided" and chain:
-        child = (row.get("choice") or "?").split(":", 1)[0]
-        return {"state": "decided", "order": None, "managers": [],
-                "text": f"picked {row.get('choice')}: the request is {child}'s q#{chain.get('picked')}"}
-    if row.get("outcome") == "proposed" and parent:
-        return {"state": "proposed", "order": None, "managers": [],
-                "text": f"answer to parent {parent.get('id')} q#{parent.get('qid')}, not picked"}
     return None
 
 
