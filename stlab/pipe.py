@@ -2,7 +2,7 @@
 
 One lane per block file (blocks/*.json):
     game facts (mod readers) -> option filters (asker/questions/rules.py + pending)
-    -> context steps (the block's "context" list, asker/context/steps.py)
+    -> context steps (the block's "context" list, @step factories in asker/context/)
     -> question wording (the block's "questions") -> model (asker/models/*) -> answer
     -> actor (sender -> rlgame clock -> "strategos-request" -> strategos AI -> Petra)
     -> acknowledgements -> back into pending.
@@ -191,29 +191,40 @@ def kinds(repo: Path) -> dict[str, dict]:
                 out[attrs["kind"]] = {"module": mod, "class": c.name, "path": src.rel, "line": c.lineno,
                                       "domains": list(attrs.get("domains") or ()), "uses_rules": uses_rules,
                                       "options": src.ref(methods.get("status"), n=8),
-                                      "context": src.ref(methods.get("context"), n=8)}
+                                      "context": src.ref(methods.get("subject"), n=8)}
     return out
 
 
+def _registered(fn: ast.FunctionDef) -> str | None:
+    """The name of a @step("name") decorator on ``fn``, or None."""
+    for d in fn.decorator_list:
+        if (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "step"
+                and d.args and isinstance(d.args[0], ast.Constant) and isinstance(d.args[0].value, str)):
+            return d.args[0].value
+    return None
+
+
 def steps(repo: Path) -> dict:
-    """The context step registry (context/steps.py STEPS): name -> factory, its params, doc."""
-    src = Src(repo, STEPS)
-    tree = src.tree()
-    if tree is None:
-        return {"steps": {}, "error": _missing(STEPS) if src.text is None else f"{STEPS}: syntax error"}
-    fns = _funcs(tree)
-    node = _assign(tree, "STEPS")
-    table = {}
-    if node is not None and isinstance(node.value, ast.Dict):
-        for k, v in zip(node.value.keys, node.value.values):
-            if isinstance(k, ast.Constant) and isinstance(k.value, str) and isinstance(v, ast.Name):
-                fn = fns.get(v.id)
-                table[k.value] = {"factory": v.id, "signature": f"({ast.unparse(fn.args)})" if fn else None,
-                                  "doc": _doc1(fn) if fn else None,
-                                  **src.ref(fn.lineno if fn else None,
-                                            n=min(SNIPPET + 6, fn.end_lineno - fn.lineno + 1) if fn else 0)}
-    return {"steps": table, "error": None if node is not None else f"{STEPS}: no STEPS registry",
-            "registry": src.ref(node.lineno if node else None, n=4)}
+    """The context steps: every @step("name") factory in context/steps.py and
+    context/__init__.py -> name -> factory, its params, doc."""
+    table, registry = {}, None
+    for rel in (STEPS, CONTEXT_INIT):
+        src = Src(repo, rel)
+        tree = src.tree()
+        if tree is None:
+            return {"steps": {}, "error": _missing(rel) if src.text is None else f"{rel}: syntax error"}
+        if rel == STEPS:
+            line = src.find(r"^def step\(")
+            registry = src.ref(line, n=8) if line else None
+        for fn in _funcs(tree).values():
+            name = _registered(fn)
+            if name:
+                table[name] = {"factory": fn.name, "signature": f"({ast.unparse(fn.args)})",
+                               "doc": _doc1(fn),
+                               **src.ref(fn.decorator_list[0].lineno,
+                                         n=min(SNIPPET + 6, fn.end_lineno - fn.decorator_list[0].lineno + 1))}
+    return {"steps": table, "error": None if table else f"{STEPS}: no @step factories",
+            "registry": registry or Src(repo, STEPS).ref(None)}
 
 
 def models(repo: Path) -> dict:
@@ -333,7 +344,7 @@ def lanes(repo: Path, kinds_: dict, steps_: dict, handlers: dict) -> list[dict]:
                 if steps_["error"]:
                     err = steps_["error"]
                 elif not st:
-                    err = f"no step {name!r} in context/steps.py STEPS"
+                    err = f"no @step({name!r}) in asker/context/"
                 elif st.get("signature") in ("()",) and params:
                     err = f"{name} takes no params"
                 lane["context"].append({"key": json.dumps(spec), "label": name, "params": params,
