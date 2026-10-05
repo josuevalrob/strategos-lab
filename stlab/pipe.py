@@ -33,8 +33,9 @@ HELPERS = MOD_SIM + "/helpers"
 ASKER = config.TOOLS_DIR + "/asker"
 RULES = ASKER + "/questions/rules.py"
 QUESTIONS = ASKER + "/questions"
-STEPS = ASKER + "/context/steps.py"
-CONTEXT_INIT = ASKER + "/context/__init__.py"
+CONTEXT = ASKER + "/context"
+STEPS = CONTEXT + "/steps.py"
+CONTEXT_INIT = CONTEXT + "/__init__.py"
 MODELS = ASKER + "/models"
 TRANSPORTS = ASKER + "/actor/transports"
 PENDING = ASKER + "/actor/pending.py"
@@ -45,7 +46,7 @@ BOT = config.AI_DIR + "/_strategosbot.js"
 REQUESTS = config.AI_DIR + "/requests.js"
 
 # Directories whose files (and file lists) the watcher follows.
-WATCH_DIRS = (config.QUESTIONS_DIR, HELPERS, config.AI_DIR, QUESTIONS, ASKER + "/context",
+WATCH_DIRS = (config.QUESTIONS_DIR, HELPERS, config.AI_DIR, QUESTIONS, CONTEXT,
               MODELS, ASKER + "/actor", TRANSPORTS, ASKER, ASKER + "/routing", config.TOOLS_DIR + "/rlgame")
 WATCH_EXT = (".json", ".js", ".py")
 SNIPPET = 14
@@ -205,10 +206,12 @@ def _registered(fn: ast.FunctionDef) -> str | None:
 
 
 def steps(repo: Path) -> dict:
-    """The context steps: every @step("name") factory in context/steps.py and
-    context/__init__.py -> name -> factory, its params, doc."""
+    """The context steps: every @step("name") factory in context/steps.py,
+    context/__init__.py and the other context modules (e.g. capacity.py)
+    -> name -> factory, its params, doc."""
     table, registry = {}, None
-    for rel in (STEPS, CONTEXT_INIT):
+    others = [f"{CONTEXT}/{m}.py" for m in _modules(repo, CONTEXT, skip=("__init__", "steps"))]
+    for rel in (STEPS, CONTEXT_INIT, *others):
         src = Src(repo, rel)
         tree = src.tree()
         if tree is None:
