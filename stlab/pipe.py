@@ -38,7 +38,7 @@ CONTEXT_INIT = ASKER + "/context/__init__.py"
 MODELS = ASKER + "/models"
 TRANSPORTS = ASKER + "/actor/transports"
 PENDING = ASKER + "/actor/pending.py"
-LOOP = ASKER + "/loop.py"
+PIPELINE = ASKER + "/routing/pipeline.py"   # where a leaf is asked and its request sent
 CLOCK = config.TOOLS_DIR + "/rlgame/clock.py"
 COMMANDS = HELPERS + "/StrategosCommands.js"
 BOT = config.AI_DIR + "/_strategosbot.js"
@@ -46,7 +46,7 @@ REQUESTS = config.AI_DIR + "/requests.js"
 
 # Directories whose files (and file lists) the watcher follows.
 WATCH_DIRS = (config.QUESTIONS_DIR, HELPERS, config.AI_DIR, QUESTIONS, ASKER + "/context",
-              MODELS, ASKER + "/actor", TRANSPORTS, ASKER, config.TOOLS_DIR + "/rlgame")
+              MODELS, ASKER + "/actor", TRANSPORTS, ASKER, ASKER + "/routing", config.TOOLS_DIR + "/rlgame")
 WATCH_EXT = (".json", ".js", ".py")
 SNIPPET = 14
 ACK_STATES = ("applied", "started", "finished", "dropped", "rejected")
@@ -190,7 +190,7 @@ def kinds(repo: Path) -> dict[str, dict]:
             if isinstance(attrs.get("kind"), str):
                 out[attrs["kind"]] = {"module": mod, "class": c.name, "path": src.rel, "line": c.lineno,
                                       "domains": list(attrs.get("domains") or ()), "uses_rules": uses_rules,
-                                      "options": src.ref(methods.get("options"), n=8),
+                                      "options": src.ref(methods.get("status"), n=8),
                                       "context": src.ref(methods.get("context"), n=8)}
     return out
 
@@ -243,7 +243,7 @@ def models(repo: Path) -> dict:
 
 def actor(repo: Path) -> dict:
     """The answer's way into the game and back: one node per hop, from the code."""
-    loop, clock, cmds, bot, req = (Src(repo, r) for r in (LOOP, CLOCK, COMMANDS, BOT, REQUESTS))
+    pipe, clock, cmds, bot, req = (Src(repo, r) for r in (PIPELINE, CLOCK, COMMANDS, BOT, REQUESTS))
     transports = _modules(repo, TRANSPORTS)
     cmd = re.search(r'g_Commands\["([^"]+)"\]', cmds.text or "")
     plan = re.search(r"queues\.(\w+)\.addPlan\(new (\w+)", req.text or "")
@@ -257,7 +257,7 @@ def actor(repo: Path) -> dict:
 
     nodes = [
         node("act:send", "actor.send", "transports: " + (", ".join(transports) or "none found"),
-             loop, loop.find(r"transport\.send\("), f"no transport.send( in {LOOP}"),
+             pipe, pipe.find(r"transport\.send\("), f"no transport.send( in {PIPELINE}"),
         node("act:clock", "rlgame clock", "Clock.put -> next /step", clock, clock.find(r"^\s+def put\("),
              f"no Clock.put in {CLOCK}"),
         node("act:command", f'"{cmd.group(1)}"' if cmd else "game command", "game command (in the replay)",
@@ -382,12 +382,12 @@ def build(cfg: config.Config) -> dict:
             "rules_ref": r.get("ref"), "pending": r["pending"], "steps": st["steps"],
             "steps_registry": st.get("registry"), "from_spec": ctx.ref(ctx.find(r"^def from_spec\("), n=3),
             "models": models(repo), "actor": act["nodes"], "handlers_ref": act["handlers_ref"],
-            "answer": Src(repo, LOOP).ref(Src(repo, LOOP).find(r"answer = model\.ask\("), n=SNIPPET, before=2),
+            "answer": Src(repo, PIPELINE).ref(Src(repo, PIPELINE).find(r"answer = self\.model\.ask\("),
+                                              n=SNIPPET, before=2),
             "errors": errors}
 
 
 # -- overlay: the newest run's last question per block -----------------------
-ASKER_LINE = re.compile(r"^asker: m(\d+) (\S+) (?:not asked: (.*)|\[.*?\] -> (\S+).*)$")
 ACK_LINE = re.compile(r"q#(\d+) (" + "|".join(ACK_STATES) + r")\b\s*(.*)$")
 
 
@@ -416,47 +416,18 @@ def _why_not(ns: dict | None, block: dict | None, line: str, stock: dict) -> dic
     return {"rule": "pending", "reason": "a request for it is still pending in the game"}
 
 
-def _asker_last(run_dir: Path) -> dict[str, dict]:
-    """The last asker.log line per block: asked (-> choice) or not asked (reasons)."""
-    out = {}
-    p = run_dir / "asker.log"
-    try:
-        with p.open("rb") as fh:
-            fh.seek(max(0, p.stat().st_size - 256_000))
-            text = fh.read().decode("utf-8", "replace")
-    except OSError:
-        return out
-    for ln in text.splitlines():
-        m = ASKER_LINE.match(ln.strip())
-        if not m:
-            continue
-        if m.group(3) is not None:
-            reasons = []
-            for part in m.group(3).split("; "):
-                if part == "pending":
-                    reasons.append({"line": None, "rule": "pending", "reason": "pending"})
-                else:
-                    head, _, why = part.partition(" ")
-                    reasons.append({"line": head, "reason": why})
-            out[m.group(2)] = {"minute": int(m.group(1)), "asked": False, "reasons": reasons}
-        else:
-            out[m.group(2)] = {"minute": int(m.group(1)), "asked": True, "choice": m.group(4)}
-    return out
-
-
 def overlay(cfg: config.Config, registry, lanes_: list[dict]) -> dict | None:
     m = newest_run(registry)
     if m is None:
         return None
     ns = _rules_ns(cfg.repo)
-    last = _asker_last(m.dir)
     out = {"run": m.id, "live": m.is_live(cfg.live_window_s), "lanes": {}}
     with m.lock:
         rows = list(m.rows)
     for lane in lanes_:
         bid = lane["id"]
         row = next((r for r in reversed(rows) if r.get("kind") == bid), None)
-        o = {"not_asked": None}
+        o = {}
         if row is not None:
             feats = row.get("features") or {}
             facts = feats.get("facts") or {}
@@ -475,10 +446,7 @@ def overlay(cfg: config.Config, registry, lanes_: list[dict]) -> dict | None:
                       "model": row.get("adapter"), "offered": offered, "dropped": dropped,
                       "choice": row.get("choice"), "outcome": row.get("outcome"), "error": row.get("error"),
                       "request": row.get("request"), "acks": acks})
-        la = last.get(bid)
-        if la and not la["asked"] and (row is None or la["minute"] > (o.get("minute") or -1)):
-            o["not_asked"] = la
-        if row is not None or o["not_asked"]:
+        if row is not None:
             out["lanes"][bid] = o
     return out
 

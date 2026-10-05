@@ -197,7 +197,6 @@
           if (o && o.dropped) Object.keys(o.dropped).forEach(function (line) {
             if (o.dropped[line].rule === r.label) hit.push(line);
           });
-          if (o && o.not_asked && r.label === "pending" && !o.minute) hit = hit.concat(["(all)"]);
           return { key: "rule:" + r.label + "@" + ln.id, label: r.label, hit: hit, err: r.error, pending: r.label === "pending",
                    y: g.top + 34 + ri * C.rowH };
         });
@@ -376,7 +375,7 @@
     if (n.kind === "answer") {
       var a = n.ov;
       if (!a || !a.minute && a.minute !== 0) {
-        h.push('<text class="s" x="' + (n.x + 9) + '" y="' + (n.y + 34) + '">' + E(fit(a && a.not_asked ? "m" + a.not_asked.minute + ": not asked" : "none in the newest run", F_S, n.w - 16)) + "</text>");
+        h.push('<text class="s" x="' + (n.x + 9) + '" y="' + (n.y + 34) + '">' + E(fit("none in the newest run", F_S, n.w - 16)) + "</text>");
       } else {
         h.push('<text class="big" x="' + (n.x + 9) + '" y="' + (n.y + 38) + '">' + E(fit(a.choice || (a.error ? "error" : "-"), F_T, n.w - 18)) + "</text>");
         h.push('<text class="s" x="' + (n.x + 9) + '" y="' + (n.y + 54) + '">' + E(fit("m" + a.minute + " · " + (a.model || "?") + " · " + (a.outcome || "-"), F_S, n.w - 16)) + "</text>");
@@ -390,7 +389,6 @@
           cx += tw(s, F_TINY) + 20;
         });
         if (bad) h.push('<text class="s drop" x="' + (n.x + 9) + '" y="' + (n.y + 82) + '">' + bad + "</text>");
-        if (a.not_asked) h.push('<text class="tiny" text-anchor="end" x="' + (n.x + n.w - 8) + '" y="' + (n.y + 16) + '">m' + a.not_asked.minute + " not asked</text>");
       }
     }
     h.push("</g>");
@@ -545,11 +543,6 @@
         if (o.offered.indexOf(line) >= 0) return '<li class="okt">✓ <b>' + E(line) + "</b> offered</li>";
         var x = (o.dropped || {})[line] || {};
         return '<li class="drop">✗ <b>' + E(line) + "</b> " + E(x.rule || "") + ": " + E(x.reason || "") + "</li>";
-      }).join("") + "</ul>");
-    }
-    if (o.not_asked) {
-      h.push('<p class="small">m' + E(o.not_asked.minute) + " not asked:</p><ul class=\"small\">" + o.not_asked.reasons.map(function (r) {
-        return "<li>" + (r.line ? "<b>" + E(r.line) + "</b> " : "") + E(r.reason) + "</li>";
       }).join("") + "</ul>");
     }
     return h.join("");

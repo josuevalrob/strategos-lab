@@ -338,6 +338,7 @@
       (e.event_chain ? "<dt>Chain</dt><dd><code>" + Lab.esc(e.event_chain.id) + "</code> " + Lab.esc(e.event_chain.event || "") +
         (e.event_chain.persona ? " → " + Lab.esc(e.event_chain.persona) : "") +
         (relevanceQid(e.event_chain) ? " (Relevance Router q#" + relevanceQid(e.event_chain) + ")" : "") +
+        (e.event_chain.sent ? " (after our q#" + e.event_chain.sent.join(", q#") + " entered Petra's queues)" : "") +
         (questionQid(e.event_chain) ? " → " + Lab.esc(e.kind) + " (Question Router q#" + questionQid(e.event_chain) + ")" : "") +
         (e.event_chain.router ? " · " + routerName(e.event_chain.router) + (e.event_chain.leaf ? " for " + Lab.esc(e.event_chain.leaf) : "") : "") +
         "</dd>" : "") +
