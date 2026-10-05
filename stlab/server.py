@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ask, stats, clone, code, config, editor, gitops, models, pipe, prompts, qa, runs
+from . import ask, stats, clone, code, config, editor, gitops, models, pipe, prompts, qa, queue, runs
 
 STATIC = config.LAB_ROOT / "static"
 
@@ -129,6 +129,10 @@ class Lab:
         m = self._run(q)
         rows = stats.read(m.engine_path)
         return {"ok": True, "run": m.id, "minutes": rows}
+
+    def queue(self, q):
+        m = self._run(q)
+        return dict(queue.table(self.cfg.repo, m), info=m.info(self.cfg.live_window_s))
 
     def models(self, q):
         kinds = [k for k in _one(q, "kinds", "").split(",") if k]
@@ -289,7 +293,7 @@ def _one(q: dict, key: str, default: str | None = None) -> str:
 
 GET_ROUTES = {"/api/info": "info", "/api/files": "files", "/api/file": "file",
               "/api/pipe": "pipe_now", "/api/runs": "runs", "/api/timeline": "timeline",
-              "/api/live": "live", "/api/question": "question", "/api/prompt": "prompt", "/api/models": "models", "/api/stats": "stats",
+              "/api/live": "live", "/api/question": "question", "/api/prompt": "prompt", "/api/models": "models", "/api/stats": "stats", "/api/queue": "queue",
               "/api/history": "history", "/api/diff": "diff", "/api/show": "show",
               "/api/civcodes": "civcodes"}
 POST_ROUTES = {"/api/ask": "p_ask", "/api/try_files": "p_try_files", "/api/validate": "p_validate", "/api/diff": "p_diff", "/api/apply": "p_apply",

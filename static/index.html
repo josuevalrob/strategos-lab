@@ -21,6 +21,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab" data-tab="pipe" role="tab">Pipe</button>
     <button class="tab" data-tab="game" role="tab">Game</button>
+    <button class="tab" data-tab="queue" role="tab">Queue</button>
     <button class="tab" data-tab="models" role="tab">Models</button>
     <button class="tab" data-tab="edit" role="tab">Edit</button>
   </nav>
@@ -77,6 +78,25 @@
     </div>
   </section>
 
+  <!-- QUEUE: every plan that entered Petra's queues, by whom, and the King -->
+  <section id="view-queue" class="view">
+    <div class="toolbar">
+      <label>Run <select id="queue-run"></select></label>
+      <label>Queue <select id="queue-filter"><option value="">all</option></select></label>
+      <label class="check"><input type="checkbox" id="queue-ours"> ours only</label>
+      <span id="queue-summary" class="small"></span>
+      <span class="spacer"></span>
+      <span id="queue-status" class="muted small"></span>
+    </div>
+    <div class="queue-body">
+      <p class="muted small queue-legend">X = our request (persona → leaf: option) · King = the King's ask after our request entered Petra's queue · K = an applied King front / fund named this plan · out = when it left the queue (Petra's: started or dropped, the snapshot does not say which)</p>
+      <table class="grid queue-table">
+        <thead><tr><th>#</th><th>in</th><th>queue</th><th>item</th><th>X</th><th>by</th><th>King</th><th>K</th><th>out</th></tr></thead>
+        <tbody id="queue-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- MODELS ------------------------------------------------------------------>
   <section id="view-models" class="view">
     <div class="toolbar">
@@ -129,6 +149,7 @@
 <script src="/static/js/app.js"></script>
 <script src="/static/js/pipe.js"></script>
 <script src="/static/js/game.js"></script>
+<script src="/static/js/queue.js"></script>
 <script src="/static/js/splitters.js"></script>
 <script src="/static/js/stats.js"></script>
 <script src="/static/js/models.js"></script>

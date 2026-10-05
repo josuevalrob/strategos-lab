@@ -78,6 +78,19 @@
     }
   };
 
+  /* From another view (Queue): show question row ``idx`` of run ``rid``, all kinds. */
+  V.openQuestion = function (rid, idx) {
+    if (V.live) {
+      V.live = false;
+      document.getElementById("game-live").checked = false;
+      document.getElementById("game-run").disabled = false;
+    }
+    V.run = rid;
+    V.kind = "all";
+    Lab.show("game");
+    V.reload().then(function () { if (V.entries[idx]) V.select(idx, true); });
+  };
+
   V.open = function (rid, kind) {
     V.run = rid;
     Lab.store.set("lab.game.run", rid);
