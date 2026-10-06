@@ -1,0 +1,23 @@
+{
+ "_doc": "Facts a finished town must show to match its civ line (lab evaluation only; the builder never reads this). Generic check names, one meaning each: ring_closed (no way out from the civic centre except gates), gates_only_at (sides where gates may be), gates_max, gate_max_m (widest opening that is still a gate), inside_max_m2 (closed inside area around the civic centre, m2; (30+2x15)^2-30^2 = 2700 = a ring at most 15 m out); an opening narrower than 6 m is a slit, reported but not counted as a gate (lattice leftovers next to Petra's free-placed buildings; a street is ~10 m), houses_side_by_side_min (share of houses touching another side by side), houses_touching_max (houses touching another, side or corner), next_to_field_or_wood_min (share within 6 m of a field or 10 m of trees).",
+ "spart": {
+  "ring_closed": true,
+  "gates_only_at": [
+   "front",
+   "left flank",
+   "right flank"
+  ],
+  "gate_max_m": 20,
+  "inside_max_m2": 2700
+ },
+ "iber": {
+  "ring_closed": true,
+  "gates_max": 1,
+  "gate_max_m": 20,
+  "houses_side_by_side_min": 0.8
+ },
+ "germ": {
+  "houses_touching_max": 0,
+  "next_to_field_or_wood_min": 0.75
+ }
+}

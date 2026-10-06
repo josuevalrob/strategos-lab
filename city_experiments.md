@@ -236,3 +236,111 @@ Pages:
 - iber  http://localhost:8765/static/city.html?run=20261006-224942-timeline-iber
 - germ  http://localhost:8765/static/city.html?run=20261006-225003-timeline-germ
 - germ, proposed line http://localhost:8765/static/city.html?run=20261006-225033-timeline-germ-prop
+
+## Round 6: Petra's buildings count as pieces of lines and rings (2026-10-06 23:39)
+
+`--timeline --variant pieces`: same timeline as round 5. Line, touch and band facts are now built from Jev's
+houses AND every structure Petra placed (fields, barracks, storehouses, farmstead, stables; not the civic centre).
+- Touch: "shoulder to shoulder with a house and a field" (gap ≤ 3 m, facing across at least 60 % of a side).
+- Lines: "line of two houses and a field running …".
+- Moves: "extends … / turns … at the … end of … / starts a line … from a field / closes the gap between a field
+  and a house".
+- Band: "joins touching buildings that then line the front, the back and the right flank of the civic centre
+  (before: …)"; only pieces within 30 m of the civic centre count for its sides.
+- State: "Lines of buildings so far (houses, fields and Petra's other buildings): …" and "Touching buildings
+  along the civic centre: …, lining …".
+Petra's placement is unchanged.
+
+- spart, civ line verbatim (233915, 233924, 233931): q1–q8/q9 all one street out, going AROUND the civic centre:
+  front row → east corner → right flank → west corner → back. The last one, q8/q9, "closes the gap between a
+  field and a house". That makes 8–9 one-street houses (round 5: 4). Houses plus Petra's fields then form one
+  touching band lining the front, the right flank and the back (all four sides in 233924, through the fields on
+  the left flank). Only then does it go outward, to a second layer at 20–34 m. 13/13 touching. Dropped: 1–2 fields
+  (round 5: 4). First step against the line: q9 (233915, 233931) or q10 (233924), when 0 one-street slots were
+  left. Top 3 (233915 q9): .33 "right flank; 20 m; shoulder to shoulder with a house; starts a line toward the
+  south-west …" | .23 "back; 20 m; …starts a line toward the north-west" | .21 "right flank; 20 m; extends …
+  the line of two houses and a field …".
+- iber (233937, 233944, 233951): q1–q4 a row along the right flank one street out, to the west corner; 6
+  one-street houses in all. Then layers outward on the right flank and the front. Band of 13 houses + 3 fields
+  lining the front, back and right flank. Dropped: 0–1 field. First step against the line: q5, minute 8, a tie
+  while 3 one-street slots were still free. Top 3 (233937): .26* "right flank; 20 m; turns south-west at the
+  north-west end of the line of four houses" | .25 "back; one street; shoulder to shoulder with a house and a
+  field; closes the gap between a field and a house …" | .22 "back; 20 m; extends toward the north-west …".
+  233944 picked the outward one at .25 against that same .25 option.
+- germ, proposed line (233958, 234005, 234013): q1–q4 stand apart (q2 "next to a field …, a field with no house
+  beside it yet"). q5 "shoulder to shoulder with a field". From q6/q7, lines of touching houses. 9–11 of 13
+  touch another house (round 5: 8–10). Dropped: 2–3 fields. First step against the line: q6, minute 9. Top 3
+  (233958): .20* "front; 20 m; shoulder to shoulder with a house; turns south-east at the south-west end of the
+  line of a house and a field …" | .11 "back; one street; shoulder to shoulder with a field; starts a line …" |
+  .09 "back; 20 m; stands apart, one street (14 m) from the nearest house …".
+- Versus round 5: counting fields as ring pieces gives Sparta a ring one street out around three sides (houses)
+  plus fields, instead of a 4-house row and then an outward block; Iberia changes little; Germania touches a
+  little more.
+
+Pages:
+- spart http://localhost:8765/static/city.html?run=20261006-233924-timeline2-spart
+- iber  http://localhost:8765/static/city.html?run=20261006-233937-timeline2-iber
+- germ, proposed line http://localhost:8765/static/city.html?run=20261006-233958-timeline2-germ-prop
+
+## Round 7 (overnight 2026-10-06/07): one design, each civ's town matches its line (judged by facts)
+
+Judge: `city_judge.py` (evaluation only; the builder never reads it). The checks per civ are data in
+`city_data/checks.json`; the code computes only generic facts:
+- Ring closed: walking out from the civic centre through free ground, with every ring piece (Jev's houses + Petra's
+  structures, each grown by 1.5 m) as a wall. Each widest way out has a narrowest point, which is a gate; it is
+  walled off and the search repeats.
+- Openings under 6 m are slits, not gates: leftovers between the 14 m lattice and Petra's free-placed buildings.
+- Gate sides are measured in the CC frame.
+- Houses touching another house (side or corner).
+- Houses next to a field (<= 6 m) or the woods (<= 10 m), on the map of the minute the house was built.
+  Trees get cut later.
+Petra alone, at minute 14, leaves one 56 m opening on the right flank (south-west), plus slits. The fields close
+every other side.
+
+Josue's rule (2026-10-06 night): no per-civ code. Word->fact tables and settings now live in data files:
+- `city_data/fact_words.json`: which goal words switch on which optional facts.
+- `city_data/civ_layout.json`: where the layout line lives. The proposed civ JSON key is "layout"; text[5] is
+  the fallback until then.
+- `city_data/checks.json`: the judge's checks per civ.
+
+Variants (full 3-run configurations; timeline + pieces; probes via `city_probe.py`):
+| # | change | germ (proposed line) | note |
+|---|---|---|---|
+| 21 | G2 line ("Every house stands apart, more than one street from the nearest house; no house is shoulder to shoulder…") + apart_words | touching 2/4/2 of 13, field/wood 5–7 | apart works, field/woods ignored |
+| 22 | + neither_words ("no field and no woods next to it (…)") | touching 6–8, field/wood 9–10 | Jev picks woods, then houses touch |
+| 23 | + apart_both ("does not stand apart: shoulder to shoulder with …") | touching 2–5, field/wood 7–8 | trade-off |
+| 24 | + apart_plain, no_far, compose (one phrase: "stands apart, 28 m from the nearest house, at the edge of the woods (5 m …)"), gate_lines (line/band facts only if the goal says ring/wall/line/row/shoulder to shoulder/back to back), gate_cc (CC gap only if the goal says street/civic centre), near_first (goal-noun facts lead the option); G7 line | touching 0 ×3, field/wood 8–9 | |
+| 25 | + far_bare ("on bare ground" instead of naming fields/woods) | touching 0 ×3, field/wood 7 | worse; dropped |
+| 26 | **variant 24 with G8 line (near first, two sentences)** | **MATCH 3/3** (235751, 235758, 235806: touching 0, field/wood 10, 12, 10 of 13); repeat **3/3** (000042, 000048, 000056: 12, 12, 12) | |
+| 26 | same flags, spart verbatim | **MATCH 3/3** (235820, 235827, 235834); repeat **3/3** (235958, 000005, 000012) | |
+| 26 | same flags, iber verbatim | 2/3 (235841 open: the first house went next to a storehouse 76 m out, "next to a storehouse" leads) | |
+| 27 | same flags, iber proposed I1 (storehouse sentence dropped) | **MATCH 3/3** (235924, 235932, 235940); repeat **3/3** (000020, 000027, 000034) | |
+
+Final design = variant 26/27 flags: apart_both, apart_plain, neither_words, no_far, compose, gate_lines, gate_cc,
+near_first (plus pieces, timeline). The same code and flags for all three civs; only the goal text differs.
+
+Towns (final runs):
+- spart: 8 houses one street (6 m) out, going around: front 3, right flank 3, west corner 1, back 1, then an outer
+  layer at 20–34 m. With Petra's fields this closes the ring (no gate wider than 6 m). Dropped: 1 field (minute 6).
+- iber (I1): the same shape as Sparta in the final runs.
+- germ (G8): 13 houses, none touching another. 10–12 of 13 next to a field (q2–q4) or at the edge of the woods
+  (later houses, 34–90 m out). Dropped: up to 4 fields and 1 storehouse (minutes 8–14) that Petra later put where
+  Jev's houses stood.
+- Caveat: fields do not block units in the game (template_structure_resource_field.xml: BlockMovement false). The
+  rings are closed in the facts Jev reads; for walking units, closed_without_fields is False in every run.
+
+Proposed civ-line wording (civ files untouched):
+- iber I1: "The houses are the wall: on the highest ground near the civic centre, houses back to back in a closed ring, rear walls facing out, one street inside, one gate toward the enemy with a tower on each side. If we start with stone walls, keep them and close any gap with houses."
+- germ G8: "The village is spread out. Every house stands at the edge of the woods or next to a field with no house beside it yet. Every house stands apart and never touches another house. Build nothing toward the enemy."
+- spart: verbatim.
+
+Lessons (round 7):
+13. Every option clause that repeats a goal noun pulls, even when negated: "no field and no woods next to it" won
+    at .12–.14 over "at the edge of the woods" (.09–.12).
+14. A goal phrase that holds two conditions ("apart … , next to a field") is read as one; give each condition its
+    own sentence and put the rarer one first (G7 8–9/13 → G8 10–12/13).
+15. State lines are pulls too: "Touching buildings … lining the left flank, the front and the back" made a
+    spread-out civ fill the missing right flank. Facts the goal does not talk about must be left out (gate by
+    goal words, from data).
+16. Composing two facts that hold together into one clause ("stands apart, 28 m …, at the edge of the woods")
+    is stronger than two separate clauses.

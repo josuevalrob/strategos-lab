@@ -1,0 +1,40 @@
+{
+ "_doc": "Which optional facts a goal turns on: a fact is added to the state/options when the goal text contains one of its words. 'lines' = line/turn/extend phrases and the 'Lines of buildings so far' state line; 'band' = 'joins touching buildings that then line \u2026 sides' and the 'Touching buildings along the civic centre' state line (both only with the gate_lines flag). Generic for every civ; edit here, not in code. 'cc_gap' = the house's distance to the civic centre in each option (only with the gate_cc flag).",
+ "field": [
+  "field"
+ ],
+ "wood": [
+  "wood"
+ ],
+ "storehouse": [
+  "storehouse"
+ ],
+ "open": [
+  "open ground"
+ ],
+ "edge": [
+  "border",
+  "edge of our territory",
+  "empty land"
+ ],
+ "enemy": [
+  "enemy"
+ ],
+ "lines": [
+  "ring",
+  "wall",
+  "line",
+  "row",
+  "shoulder to shoulder",
+  "back to back"
+ ],
+ "band": [
+  "ring",
+  "wall",
+  "around the civic centre"
+ ],
+ "cc_gap": [
+  "street",
+  "civic centre"
+ ]
+}

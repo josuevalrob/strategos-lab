@@ -1,0 +1,5 @@
+{
+ "_doc": "Where the lab finds a civ's town-layout line. Preferred: a 'layout' key in the civ JSON (proposed to Josue). Until the civ JSON has it, the lab uses text[text_index].",
+ "key": "layout",
+ "text_index": 5
+}

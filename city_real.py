@@ -28,7 +28,9 @@ import city_demo as cd
 REPO0AD = Path("~/Projects/0AD").expanduser()
 LOG = REPO0AD / ".claude/strategos/runs/solo/20261006-213701/engine.log"
 CIVS = REPO0AD / "binaries/data/mods/strategos/simulation/data/strategos/civs"
-LAYOUT_LINE = 5                     # civ JSON text[5] = the town layout line
+DATA = Path(__file__).resolve().parent / "city_data"
+FACT_WORDS = {k: v for k, v in json.loads((DATA / "fact_words.json").read_text()).items() if not k.startswith("_")}
+LAYOUT = json.loads((DATA / "civ_layout.json").read_text())   # where a civ JSON keeps its town-layout line
 RUNS_DIR = cd.RUNS_DIR
 PITCH = 14                          # lattice step = house width: neighbours stand shoulder to shoulder
 STREET = 10                         # "a street is about 10 m"
@@ -166,7 +168,7 @@ class Words:
             return f"one street ({metres(g)}) from the civic centre"
         if g <= 30:
             return f"{metres(g)} from the civic centre, more than one street"
-        return f"{metres(g)} from the civic centre, far from it"
+        return f"{metres(g)} from the civic centre" + ("" if VARIANT.get("no_far") else ", far from it")
 
 
 # == the builder =================================================================================
@@ -182,10 +184,7 @@ class Builder:
         self.h = PITCH / 2
         self.slots = self._free_slots()
         self.slots.update({k: (k[0] * PITCH, k[1] * PITCH, self.h, self.h) for k in houses})
-        self.mentions = {k: any(w in self.goal for w in ws) for k, ws in {
-            "field": ["field"], "wood": ["wood"], "storehouse": ["storehouse"],
-            "open": ["open ground", "apart"], "edge": ["border", "edge of", "empty land"],
-            "enemy": ["enemy"]}.items()}
+        self.mentions = {k: any(w in self.goal for w in ws) for k, ws in FACT_WORDS.items()}
 
     # -- slots ----------------------------------------------------------------------------------
     def _free_slots(self) -> dict:
@@ -257,12 +256,17 @@ class Builder:
         if not houses:
             return "the first house"
         side_by = sum((k[0] + a, k[1] + b) in houses for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+        pre = "does not stand apart: " if VARIANT.get("apart_both") else ""
         if side_by:
-            return f"shoulder to shoulder with {num(side_by)} house{'s' if side_by > 1 else ''}"
+            return f"{pre}shoulder to shoulder with {num(side_by)} house{'s' if side_by > 1 else ''}"
         if any((k[0] + a, k[1] + b) in houses for a, b in ((1, 1), (1, -1), (-1, 1), (-1, -1))):
-            return "touches a house only at a corner"
+            return f"{pre}touches a house only at a corner"
         r = self.slots[k]
         g = min(Map.gap(r, self.slots[h]) for h in houses)
+        if VARIANT.get("apart_plain"):     # no street word: "stands apart, 14 m from the nearest house"
+            return f"stands apart, {metres(g)} from the nearest house"
+        if g > 15 and VARIANT.get("apart_words"):
+            return f"stands apart, more than one street ({metres(g)}) from the nearest house"
         return (f"stands apart, one street ({metres(g)}) from the nearest house" if g <= 15
                 else f"stands apart, {metres(g)} from the nearest house")
 
@@ -305,8 +309,26 @@ class Builder:
 
     def near_facts(self, k, houses) -> list:
         m, r, out = self.m, self.slots[k], []
+        if VARIANT.get("neither_words") and self.mentions["field"] and self.mentions["wood"] and self.fields and m.trees:
+            gf = round(min(Map.gap(r, f) for f in self.fields))
+            gw = round(min(m.point_gap(r, x, z) for x, z in m.trees))
+            if gf > 6 and gw > 10:     # say the consequence once instead of two bare distances
+                if VARIANT.get("far_bare"):         # no goal nouns at all for a slot far from both
+                    out.append("on bare ground")
+                elif not VARIANT.get("near_only"):     # near_only: a slot far from both says nothing about them
+                    out.append(f"no field and no woods next to it (nearest field {metres(gf)}, nearest trees {metres(gw)})")
+                return out + self._other_near(k, houses)
+            if VARIANT.get("near_only"):
+                if gf <= 6:
+                    f = min(self.fields, key=lambda f: Map.gap(r, f))
+                    own = not any(Map.gap(self.slots[h], f) <= 6 for h in houses)
+                    out.append(f"next to a field ({metres(max(gf, 0))})" +
+                               (", a field with no house beside it yet" if own else ", a field that already has a house beside it"))
+                if gw <= 10:
+                    out.append(f"at the edge of the woods ({metres(gw)} to the nearest tree)")
+                return out + self._other_near(k, houses)
         if self.mentions["field"] and self.fields:
-            g, f = min((Map.gap(r, f), f) for f in self.fields)
+            g, f = min((round(Map.gap(r, f)), f) for f in self.fields)
             if g <= 6:
                 own = not any(Map.gap(self.slots[h], f) <= 6 for h in houses)
                 out.append(f"next to a field ({metres(max(g, 0))})" +
@@ -314,16 +336,26 @@ class Builder:
             else:
                 out.append(f"{metres(g)} from the nearest field")
         if self.mentions["wood"] and m.trees:
-            g = min(m.point_gap(r, x, z) for x, z in m.trees)
+            g = round(min(m.point_gap(r, x, z) for x, z in m.trees))
             out.append(f"at the edge of the woods ({metres(g)} to the nearest tree)" if g <= 10
                        else f"{metres(g)} from the nearest trees")
+        return out + self._other_near(k, houses)
+
+    def _other_near(self, k, houses) -> list:
+        m, r, out = self.m, self.slots[k], []
         if self.mentions["storehouse"] and self.stores:
             g = min(Map.gap(r, s) for s in self.stores)
             out.append(f"next to a storehouse ({metres(max(g, 0))})" if g <= 10 else f"{metres(g)} from the nearest storehouse")
         if self.mentions["open"]:
-            things = [Map.gap(r, b) for b in self.blocks] + [Map.gap(r, self.slots[h]) for h in houses] + \
-                     [m.point_gap(r, x, z) for x, z in m.trees]
-            out.append("open ground all around it" if min(things) > 8 else "close to other buildings or trees")
+            if VARIANT.get("open_houses"):     # open ground = no house or (non-field) building near; fields/trees are fine
+                things = [Map.gap(r, self.m.rect(s)) for s in self.m.structs if not s["tpl"].endswith("/field")] + \
+                         [Map.gap(r, self.slots[h]) for h in houses]
+                out.append("open ground around it (no house or building within 8 m)" if min(things) > 8
+                           else "close to other houses or buildings")
+            else:
+                things = [Map.gap(r, b) for b in self.blocks] + [Map.gap(r, self.slots[h]) for h in houses] + \
+                         [m.point_gap(r, x, z) for x, z in m.trees]
+                out.append("open ground all around it" if min(things) > 8 else "close to other buildings or trees")
         if self.mentions["edge"]:
             x, z = m.wld(r[0], r[1])
             e = m.edge_dist(x, z)
@@ -339,8 +371,23 @@ class Builder:
 
     def option_text(self, k, houses) -> str:
         r = self.slots[k]
-        parts = [self.w.side(r[0], r[1]), self.w.cc_gap(Map.gap(r, self.cc_rect)), self.touch(k, houses)]
-        parts += self.anchor(k, houses) + self.near_facts(k, houses)
+        touch, near = self.touch(k, houses), self.near_facts(k, houses)
+        if VARIANT.get("compose") and touch.startswith("stands apart"):
+            # one phrase for two facts that hold together: "stands apart …, at the edge of the woods (…)"
+            joint = [p for p in near if p.startswith(("next to a field", "at the edge of the woods"))]
+            if joint:
+                touch = touch + ", " + " and ".join(joint)
+                near = [p for p in near if p not in joint]
+        parts = [self.w.side(r[0], r[1])]
+        if not VARIANT.get("gate_cc") or self.mentions.get("cc_gap"):
+            parts.append(self.w.cc_gap(Map.gap(r, self.cc_rect)))
+        parts.append(touch)
+        parts += self.anchor(k, houses) + near
+        if VARIANT.get("near_first"):      # the goal's own nouns (field, woods, storehouse …) lead the option
+            lead = [p for p in parts if p.startswith(("next to a", "at the edge of the woods", "no field and no woods", "on bare ground"))]
+            if VARIANT.get("compose") and touch.startswith("stands apart") and ", next to a" in touch or ", at the edge" in touch:
+                lead = [touch] + lead
+            parts = lead + [p for p in parts if p not in lead]
         return "a house " + "; ".join(parts)
 
     # -- state ----------------------------------------------------------------------------------
@@ -487,7 +534,8 @@ class PiecesBuilder(Builder):
         r = self.slots[k]
         side_by = [p["kind"] for p in ps if inline(r, p["rect"], 0) or inline(r, p["rect"], 1)]
         if side_by:
-            return "shoulder to shoulder with " + kind_list(side_by)
+            pre = "does not stand apart: " if VARIANT.get("apart_both") and "house" in side_by else ""
+            return pre + "shoulder to shoulder with " + kind_list(side_by)
         return super().touch(k, houses)
 
     def anchor(self, k, houses) -> list:
@@ -495,7 +543,8 @@ class PiecesBuilder(Builder):
         r = self.slots[k]
         ls = self.lines(ps)
         out = []
-        for ax in (0, 1):
+        gate = VARIANT.get("gate_lines")
+        for ax in ((0, 1) if not gate or self.mentions.get("lines") else ()):
             plus = [i for i, p in enumerate(ps) if inline(r, p["rect"], ax) and p["rect"][ax] > r[ax]]
             minus = [i for i, p in enumerate(ps) if inline(r, p["rect"], ax) and p["rect"][ax] < r[ax]]
 
@@ -528,7 +577,7 @@ class PiecesBuilder(Builder):
                                    f"{self.w.side(p['rect'][0], p['rect'][1]).split(' (')[0]}")
         ps2 = self.pieces(houses, extra=k)
         band = next(c for c in self.comps(ps2, lambda a, b: Map.gap(a, b) <= TOL) if len(ps2) - 1 in c)
-        if len(band) >= 2:
+        if len(band) >= 2 and (not gate or self.mentions.get("band")):
             before = self.faces([ps2[i]["rect"] for i in band if i != len(ps2) - 1])
             after = self.faces([ps2[i]["rect"] for i in band])
             if after:
@@ -539,11 +588,13 @@ class PiecesBuilder(Builder):
     def state(self, houses) -> str:
         lines = self.map_lines() + [f"Houses built so far: {num(len(houses)) if houses else 'none yet'}."]
         ps = self.pieces(houses)
-        ls = sorted(self.lines(ps), key=lambda l: -len(l[1]))
+        gate = VARIANT.get("gate_lines")
+        ls = sorted(self.lines(ps), key=lambda l: -len(l[1])) if not gate or self.mentions.get("lines") else []
         if ls:
             lines.append("Lines of buildings so far (houses, fields and Petra's other buildings): " +
                          "; ".join(f"a {self.pline_name(ax, idx, ps)}" for ax, idx in ls[:8]) + ".")
-        bands = [c for c in self.comps(ps, lambda a, b: Map.gap(a, b) <= TOL) if len(c) >= 2]
+        bands = [c for c in self.comps(ps, lambda a, b: Map.gap(a, b) <= TOL) if len(c) >= 2] \
+            if not gate or self.mentions.get("band") else []
         lined = [(self.faces([ps[i]["rect"] for i in c]), c) for c in bands]
         lined = [(f, c) for f, c in lined if f]
         if lined:
@@ -563,6 +614,10 @@ INSTRUCTIONS = "Where does the next house go?"
 
 def build(b: Builder, goal: str, houses: list, n: int, total: int):
     cands = b.candidates(houses)
+    if VARIANT.get("shuffle"):      # Jev favours early options: list them in a fixed pseudo-random order, not nearest-first
+        import random
+        cands = sorted(cands)
+        random.Random(1000 + n).shuffle(cands)
     options = [{"id": f"s{i:+d}_{j:+d}".replace("+", "p").replace("-", "m"), "slot": (i, j),
                 "text": b.option_text((i, j), houses)} for i, j in cands]
     prompt = TEMPLATE.format(goal=goal, hw=round(b.m.house_w), street=STREET, state=b.state(houses), n=n, total=total)
@@ -623,7 +678,8 @@ def save_real(run: dict):
 
 
 def civ_line(civ: str) -> str:
-    return json.loads((CIVS / f"{civ}.json").read_text())["text"][LAYOUT_LINE]
+    d = json.loads((CIVS / f"{civ}.json").read_text())
+    return d.get(LAYOUT["key"]) or d["text"][LAYOUT["text_index"]]
 
 
 def one_run(civ: str, minute: int, total: int, dry: bool, goal_text: str | None = None) -> dict:
@@ -716,7 +772,7 @@ def timeline_run(civ: str, dry: bool, goal_text: str | None = None) -> dict:
            "dry": dry, "goal_text": goal, "started": now.isoformat(timespec="seconds"),
            "source": {"log": str(LOG), "minutes": minutes}, "template": TEMPLATE, "instructions": INSTRUCTIONS,
            "rule": f"free {PITCH} m lattice slots aligned to the civic centre, within {REACH} m of a building or a house",
-           "maps": {}, "dropped": [], "steps": [], "summary": {}}
+           "maps": {}, "dropped": [], "steps": [], "summary": {}, "flags": dict(VARIANT)}
     houses: list = []
     dropped: dict = {}
     total = len(minutes)
@@ -785,7 +841,7 @@ def timeline_run(civ: str, dry: bool, goal_text: str | None = None) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--civ", choices=["spart", "iber", "germ"], required=True)
+    ap.add_argument("--civ", required=True, help="civ code: any civs/<civ>.json in the strategos mod")
     ap.add_argument("--minute", type=int, default=10)
     ap.add_argument("--houses", type=int, default=12)
     ap.add_argument("--runs", type=int, default=1)
@@ -795,11 +851,16 @@ def main(argv=None) -> int:
     ap.add_argument("--variant", choices=["real1", "real2", "pieces"], default="real1",
                     help="real2: lines say whether they run around or away from the civic centre")
     ap.add_argument("--goal-text", default=None, help="test a proposed civ line (the civ JSON is not touched)")
+    ap.add_argument("--set", action="append", default=[], help="extra VARIANT flag for a variant, e.g. apart_words=1")
+    ap.add_argument("--flags", default="", help="comma list of VARIANT flags to switch on")
     ap.add_argument("--timeline", action="store_true",
                     help="real timeline: question k at the minute Petra's k-th house appears, that minute's map")
     args = ap.parse_args(argv)
     cd.VERBOSE = args.verbose
     VARIANT.update(name=args.variant, around=args.variant == "real2", pieces=args.variant == "pieces")
+    for kv in args.set + [f"{f}=1" for f in args.flags.split(",") if f]:
+        k, v = kv.split("=", 1)
+        VARIANT[k] = v not in ("0", "false", "")
     if args.print:
         m = Map(load_snapshot(LOG, args.minute))
         goal = args.goal_text or civ_line(args.civ)
