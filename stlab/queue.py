@@ -4,9 +4,11 @@
 Read from the run's own files, re-read whenever they grow (live while a game runs):
   engine.log      "[strategos] queue {...}" snapshots of the watched queues (the strategos
                   AI, queues.js) and the "[strategos] pN q#M applied/started/..." acks
-  advisor/*.jsonl our requests (outcome "sent") and the King's rows (event_chain.persona
-                  "king", event_chain.sent = our q#s that triggered him)
-  pipeline.jsonl  King triggers with no row: only "keep" was possible, so he was not asked
+  advisor/*.jsonl our requests (outcome "sent") and the queue_order rows (asked by the King
+                  in older runs, by the Master of Coin since 2026-10-06; event_chain.sent =
+                  our q#s that triggered the ask)
+  pipeline.jsonl  queue_order triggers with no row: only "keep" was possible, so no ask
+                  (older runs: rec "king"; newer: rec "role" == "master_of_coin" + "sent")
 
 A plan is one Petra plan object: the snapshots give each plan's "waiting_s" since the AI
 first saw it, so queue + what + (t - waiting_s) names the same plan across snapshots.
@@ -90,7 +92,7 @@ def _build(repo: Path, m, engine: Path | None) -> dict:
     king_sends: dict[int, dict] = {}       # King q# -> his request (front / fund)
     for r in rows:
         chain = r.get("event_chain") or {}
-        if chain.get("persona") == "king":
+        if r.get("kind") == "queue_order":    # the King's leaf in older runs, the Master of Coin's now
             ask = {"qid": r["qid"], "idx": r["_idx"], "choice": r.get("choice"), "outcome": r.get("outcome")}
             for q in chain.get("sent") or []:
                 king_of[q] = ask
@@ -101,9 +103,10 @@ def _build(repo: Path, m, engine: Path | None) -> dict:
                               "leaf": r.get("kind"), "option": r.get("choice")}
     king_asks = len({a["qid"] for a in king_of.values()})
     for rec in _pipeline(m.dir):            # King triggers he was not asked for (only "keep" possible)
-        if "king" in rec and not rec.get("leaves"):
+        sent = rec["king"] if "king" in rec else rec.get("sent") if rec.get("role") == "master_of_coin" else None
+        if sent is not None and not rec.get("leaves"):
             king_asks += 1
-            for q in rec["king"]:
+            for q in sent:
                 king_of.setdefault(q, {"qid": None, "idx": None, "choice": None, "not_asked": True})
 
     plans: list[dict] = []
