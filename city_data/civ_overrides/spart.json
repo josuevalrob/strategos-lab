@@ -1,0 +1,8 @@
+{
+ "_doc": "Lab-side override for civs/spart.json until the civ JSON has params.city.layout itself. Copied verbatim once from its text.",
+ "params": {
+  "city": {
+   "layout": "The city is the wall: square rings of buildings around the civic centre, shoulder to shoulder, streets about 10 m wide, gates only to the front and the two flanks."
+  }
+ }
+}

@@ -1,0 +1,8 @@
+{
+ "_doc": "Lab-side override for civs/germ.json until the civ JSON has params.city.layout itself. Copied verbatim once from its text.",
+ "params": {
+  "city": {
+   "layout": "The village is spread out, with no ring and no wall: each house stands apart with open ground around it, next to its own field, wood or spring. Build nothing toward the enemy; the empty land on that side is our border. Leave the woods on that side uncut. The civic centre is the wagon camp everyone falls back to."
+  }
+ }
+}

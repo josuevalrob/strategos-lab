@@ -1,0 +1,8 @@
+{
+ "_doc": "Lab-side override for civs/iber.json until the civ JSON has params.city.layout itself. Copied verbatim once from its text.",
+ "params": {
+  "city": {
+   "layout": "The houses are the wall: on the highest ground near the civic centre, houses back to back in a closed ring, rear walls facing out, one street inside, one gate toward the enemy with a tower on each side. The civic centre and the storehouses stand inside the ring. If we start with stone walls, keep them and close any gap with houses."
+  }
+ }
+}

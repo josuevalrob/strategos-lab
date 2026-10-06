@@ -1,5 +1,4 @@
 {
- "_doc": "Where the lab finds a civ's town-layout line. Preferred: a 'layout' key in the civ JSON (proposed to Josue). Until the civ JSON has it, the lab uses text[text_index].",
- "key": "layout",
- "text_index": 5
+ "_doc": "Where the lab finds a civ's town-layout line: the named field params.city.layout (dotted path below), first in the civ JSON, then in the lab-side override city_data/civ_overrides/<civ>.json. No index into text[]: a civ without the field is an error.",
+ "field": "params.city.layout"
 }

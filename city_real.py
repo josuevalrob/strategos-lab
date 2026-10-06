@@ -678,8 +678,18 @@ def save_real(run: dict):
 
 
 def civ_line(civ: str) -> str:
-    d = json.loads((CIVS / f"{civ}.json").read_text())
-    return d.get(LAYOUT["key"]) or d["text"][LAYOUT["text_index"]]
+    """The civ's town-layout line from the named field (city_data/civ_layout.json), civ JSON first, then the
+    lab-side override.  No per-civ code and no text[] index."""
+    def get(d):
+        for part in LAYOUT["field"].split("."):
+            d = d.get(part) if isinstance(d, dict) else None
+        return d
+    for path in (CIVS / f"{civ}.json", DATA / "civ_overrides" / f"{civ}.json"):
+        if path.exists():
+            line = get(json.loads(path.read_text()))
+            if line:
+                return line
+    raise SystemExit(f"{civ}: no {LAYOUT['field']} in civs/{civ}.json or city_data/civ_overrides/{civ}.json")
 
 
 def one_run(civ: str, minute: int, total: int, dry: bool, goal_text: str | None = None) -> dict:
