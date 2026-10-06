@@ -344,3 +344,14 @@ Lessons (round 7):
     goal words, from data).
 16. Composing two facts that hold together into one clause ("stands apart, 28 m …, at the edge of the woods")
     is stronger than two separate clauses.
+
+### No per-civ code (follow-up, 2026-10-07)
+- Layout line: the lab now reads the named field `params.city.layout` (configured in `city_data/civ_layout.json`).
+  It looks in the civ JSON first, then in the lab-side override `city_data/civ_overrides/<civ>.json`, which holds
+  the verbatim lines copied once. There is no text[] index. A civ without the field stops with an error.
+  Proposal for Josue: add `params.city.layout` to each civ JSON.
+- Word → fact table: `city_data/fact_words.json` (field, wood, storehouse, open, edge, enemy, lines, band,
+  cc_gap). The code computes only generic geometry; the words choose which facts appear.
+- Judge checks per civ: data in `city_data/checks.json`, used for evaluation only.
+- No `if civ` branch, no per-civ dict, no per-civ tuning in city_real.py, city_judge.py or city_probe.py
+  (grep: civ codes appear only in usage examples).
