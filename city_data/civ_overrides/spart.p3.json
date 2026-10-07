@@ -1,8 +1,0 @@
-{
- "_doc": "Proposed spart layout line P3 (rounds 11-13), read only with city_real.py --line p3; civs/spart.json is not touched.",
- "params": {
-  "city": {
-   "layout": "The city is the wall: square rings of buildings around the civic centre, the first ring a street (about 10 m) from the civic centre, each next ring a street outside the last. In each ring the buildings stand shoulder to shoulder, and the ring is closed before the next one starts. Gates only to the front and the two flanks: every ring has one gate one street wide on the front side, on the left flank and on the right flank; the back side and the corners of every ring are closed."
-  }
- }
-}
