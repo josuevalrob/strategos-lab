@@ -77,7 +77,7 @@ class Map:
         t = snap["territory"]
         self.terr = t
         self.grid = ["".join(f"{int(ch, 16):04b}" for ch in r)[:t["w"]] for r in t["rows"]]
-        self.res = [(k, x, z) for k, pts in snap["resources"].items() if isinstance(pts, list) for x, z, _ in pts]
+        self.res = [(k, p[0], p[1]) for k, pts in snap["resources"].items() if isinstance(pts, list) for p in pts]
         self.trees = [(x, z) for k, x, z in self.res if k == "wood"]
         enemy = snap.get("enemy_cc") or []
         if enemy and isinstance(enemy[0], dict):    # the game's snapshot: [{"id", "player", "x", "z"}]: the nearest
