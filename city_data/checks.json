@@ -40,6 +40,7 @@
    ],
    "street_share_min": 0.8
   },
-  "_doc_relative": "Relative score (round 14+): Jev's town vs v1's own town (city_v1.py) on the same snapshot and timeline; pass = Jev at least as good on every measure: openings (count of ways out, lower), open_m (their total width, lower), gate_sides (front / left flank / right flank sides with an opening of gate_m width, higher), corner_back (openings at a corner or on the back, lower), street_share (ring-1 buildings 8-12 m from ring 0, higher). Up to 16 ways out are counted."
+  "_doc_relative": "Relative score (round 14+): Jev's town vs v1's own town (city_v1.py) on the same snapshot and timeline; pass = Jev at least as good on every measure: openings (count of ways out, lower), open_m (their total width, lower), gate_sides (front / left flank / right flank sides with an opening of gate_m width, higher), corner_back (openings at a corner or on the back, lower), street_share (ring-1 buildings 8-12 m from ring 0, higher). Up to 16 ways out are counted.",
+  "_doc_terrain": "Round 23+: stone and metal mines are walls in the ways-out flood (terrain units cannot cross; 5 m half-size squares, inside the builder's 6 m clearance), for Jev's town and v1's alike; they are never ring pieces. Fields still do not block (BlockMovement false)."
  }
 }

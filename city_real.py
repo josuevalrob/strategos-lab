@@ -862,6 +862,7 @@ TOWN_LOG = REPO0AD / ".claude/strategos/runs/solo/20261007-001734/engine.log"
 TPL_DIR = REPO0AD / "binaries/data/mods/public/simulation/templates"
 PLANNER = json.loads((DATA / "planner_classes.json").read_text())
 RES_R = {"wood": TREE_R, "food.fruit": TREE_R, "stone": MINE_R, "metal": MINE_R}   # hunt (food.meat) walks away
+MINE_WALL = 5.0      # what a mine itself blocks (units cannot cross it); buildings keep MINE_R clear
 FLUSH = 1.0          # shoulder to shoulder: 1 m apart, still closed to units (v1's block gap)
 HOLE_SLACK = 2.0     # a hole spot leaves at most this on each side (the judge closes gaps up to 2 m)
 ORD = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh",
@@ -1987,11 +1988,15 @@ class TownBuilder12(TownBuilder9):
         if not VARIANT.get("along"):
             return super().option_text(r)
         fw = self.face_word(r)
-        parts = [self.main_clause(r)]
+        main = self.main_clause(r)
+        parts = [main]
         for extra in (self.side_fact(r), self.opening_fact(r)):
             if extra:
                 parts.append(extra)
-        where = f"at the {fw} of the civic centre" if "corner" in fw else f"on the {fw} of the civic centre, {self.along(r)}"
+        say_along = not VARIANT.get("along_ring_only") or main.startswith(("in the ", "continues the ", "closes a gap")) or \
+            (hasattr(self, "beside_gate") and self.beside_gate(r))
+        where = f"at the {fw} of the civic centre" if "corner" in fw else \
+            f"on the {fw} of the civic centre" + (f", {self.along(r)}" if say_along else "")
         return f"a {self.new['kind']} {where}: " + "; ".join(parts)
 
     def side_fact(self, r) -> str:
@@ -2117,18 +2122,47 @@ class TownBuilder15(TownBuilder12):
                 along = g["t"] + side * (STREET / 2 + h[o])
                 yield (along, radial) if ax == 1 else (radial, along)
 
+    def nogate_spots(self, hu, hv):
+        """A side answered 'no gate': the middle of that side, inner face on the ring's inner face."""
+        c = self.cc_rect
+        for g in getattr(self, "gate_list", []):
+            if g["rect"] is not None:
+                continue
+            ax, sg = SIDE_AX[g["side"]]
+            h = (hu, hv)
+            radial = sg * (c[2 + ax] + g["a"] + h[ax])
+            yield (0.0, radial) if ax == 1 else (radial, 0.0)
+
+    def mine_sources(self) -> list:
+        """Stone and metal mines near the city as squares of their clearance (terrain: a building may stand
+        against that edge, not in it)."""
+        m, out = self.m, []
+        for k, x, z in m.res:
+            if k in ("stone", "metal"):
+                u, v = m.loc(x, z)
+                if max(abs(u), abs(v)) < 90:
+                    out.append((k, (u, v, MINE_R, MINE_R)))
+        return out
+
     def spots(self) -> list:
         out = super().spots()
         if not VARIANT.get("gate_edges"):
             return out
         seen = set(out)
+        extra = []
         for hu, hv in self.shapes():
-            for cu, cv in self.gate_edge_spots(hu, hv):
-                r = (round(cu * 2) / 2, round(cv * 2) / 2, hu, hv)
-                if r not in seen:
-                    seen.add(r)
-                    if self.possible(r):
-                        out.append(r)
+            cands = list(self.gate_edge_spots(hu, hv))
+            if VARIANT.get("nogate_mid"):
+                cands += list(self.nogate_spots(hu, hv))
+            if VARIANT.get("mine_edges"):
+                cands += [cand for _, sq in self.mine_sources() for cand in self.around(sq, hu, hv, 0.0)]
+            extra += [(cu, cv, hu, hv) for cu, cv in cands]
+        for cu, cv, hu, hv in extra:
+            r = (round(cu * 2) / 2, round(cv * 2) / 2, hu, hv)
+            if r not in seen:
+                seen.add(r)
+                if self.possible(r):
+                    out.append(r)
         out.sort(key=lambda r: (Map.gap(r, self.cc_rect), r))
         return out
 
@@ -2140,8 +2174,20 @@ class TownBuilder15(TownBuilder12):
 
     def option_text(self, r) -> str:
         t = super().option_text(r)
-        b = self.beside_gate(r) if VARIANT.get("gate_edges") else ""
-        return t + "; " + b if b else t
+        extra = [self.beside_gate(r) if VARIANT.get("gate_edges") else ""]
+        if VARIANT.get("nogate_mid"):
+            for g in getattr(self, "gate_list", []):
+                if g["rect"] is None and self.face_word(r) == g["side"]:
+                    ax, _ = SIDE_AX[g["side"]]
+                    if abs(r[1 - ax]) < 0.5 and abs(self.din(r) - g["a"]) < 1:
+                        extra.append(f"in the middle of the {g['side']} of the {ORD[g['ring']]} ring, which has no gate")
+        if VARIANT.get("mine_edges"):
+            for k, sq in self.mine_sources():
+                if -0.5 <= Map.gap(r, sq) <= 1.5:
+                    extra.append(f"against the edge of {RES_NAME[k]}")
+                    break
+        extra = [e for e in extra if e]
+        return t + ("; " + "; ".join(extra) if extra else "")
 
     def where_phrase(self, r) -> str:
         fw = self.face_word(r)
@@ -2199,6 +2245,9 @@ class TownBuilder15(TownBuilder12):
             rect = self.gate_rect(side, a, t)
             if any(Map.gap(rect, p["rect"]) < 0 for p in self.placed):
                 continue                                  # a building stands there already (an inner gate is fine)
+            if VARIANT.get("gate_no_mine") and any(Map.gap(rect, (sq[0], sq[1], MINE_WALL, MINE_WALL)) < 0
+                                                  for _, sq in self.mine_sources()):
+                continue                                  # a mine stands in it: no way through, not a gate
             out.append({"id": f"g{len(out)}", "t": t, "rect": rect,
                         "text": f"a gate one street wide {self.gate_where(side, t)} of the {ORD[k]} ring: "
                                 + self.gate_words(side, k, a, t)})
@@ -2221,7 +2270,7 @@ class TownBuilder15(TownBuilder12):
 TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4,
                  "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8, "town9": TownBuilder9, "town10": TownBuilder9,
                  "town11": TownBuilder9, "town12": TownBuilder12, "town13": TownBuilder12, "town14": TownBuilder12,
-                 "town15": TownBuilder15, "town16": TownBuilder15}
+                 "town15": TownBuilder15, "town16": TownBuilder15, "town17": TownBuilder15, "town18": TownBuilder15}
 
 
 TOWN_TEMPLATE = """Role: City planner.
@@ -2231,7 +2280,8 @@ Map: a real map seen from above. A street is about {street} m wide. The new {kin
 Question {n} of {total}: where does the new {kind} go?"""
 
 
-MAX_OPTIONS = 255    # the Jev endpoint answers 503 above 255 criteria (measured 2026-10-07: 250 ok, 256 refused)
+MAX_OPTIONS = 255    # the Jev endpoint answers 503 above 255 criteria (measured 2026-10-07: 250 ok, 256 refused);
+                     # a question with more is asked in parts (ask_in_parts)
 
 
 def town_build(b: TownBuilder, goal: str, n: int, total: int):
@@ -2266,6 +2316,22 @@ def town_maps(snaps: dict, minute: int, placed: list, dropped: dict, hsize: dict
         dropped[skey(st)] = minute
     snap["structures"] = [st for st in snap["structures"] if skey(st) not in dropped]
     return Map(snap, hsize), new_drops
+
+
+def ask_in_parts(prompt, options, n):
+    """More options than the endpoint takes (255): ask each part (nearest the CC first, at most 255 each), then ask
+    the final question among the parts' picks.  Returns the final answer and the parts' picks with their p."""
+    k = -(-len(options) // MAX_OPTIONS)
+    size = -(-len(options) // k)
+    picks = []
+    for i in range(k):
+        chunk = options[i * size:(i + 1) * size]
+        r = cd.ask_retry(prompt, chunk, f"{n} part {i + 1}")
+        if not r.get("ok"):
+            return r, None
+        picks.append({"id": r["choice"], "p": (r.get("probabilities") or {}).get(r["choice"]), "of": len(chunk)})
+    final = [o for o in options if o["id"] in {p["id"] for p in picks}]
+    return cd.ask_retry(prompt, final, f"{n} final"), picks
 
 
 def ask_gates(b, m, goal, placed, gates, run, n, dry) -> str | None:
@@ -2338,14 +2404,14 @@ def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line
         if not options:
             run["summary"]["error"] = f"q{n}: no possible spot for the {ev['kind']}"
             break
-        if len(options) > MAX_OPTIONS:
-            run["summary"]["error"] = f"q{n}: {len(options)} different options, more than the endpoint takes ({MAX_OPTIONS})"
-            break
         byid = {o["id"]: o for o in options}
         t0 = time.time()
+        parts = None
         if dry:
             r = {"ok": True, "choice": options[0]["id"],
                  "probabilities": {o["id"]: (1.0 if i == 0 else 0.0) for i, o in enumerate(options)}}
+        elif len(options) > MAX_OPTIONS:
+            r, parts = ask_in_parts(prompt, options, n)
         else:
             r = cd.ask_retry(prompt, options, n)
         if not r.get("ok"):
@@ -2360,7 +2426,7 @@ def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line
             "n": n, "minute": mnt, "kind": ev["kind"], "tpl": ev["tpl"], "prompt": prompt, "n_options": len(options),
             "slots": {o["id"]: rect_world(m, o["rect"], ev["kind"]) for o in options},
             "top": [{"id": i, "p": probs[i], "text": byid[i]["text"]} for i in top if i in byid],
-            "choice": r["choice"], "text": pick["text"], "p": probs.get(r["choice"]), "rect": list(pick["rect"]),
+            "choice": r["choice"], "text": pick["text"], "p": probs.get(r["choice"]), "rect": list(pick["rect"]), "parts": parts,
             "building": rect_world(m, pick["rect"], ev["kind"]), "ms": r.get("ms") or round((time.time() - t0) * 1000)})
         run["summary"] = {"buildings": len(placed), "houses": len(placed), "touching_another": None,
                           "dropped": len(run["dropped"])}

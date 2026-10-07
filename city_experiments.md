@@ -620,3 +620,32 @@ out, no back opening, street >= 80 %) not met.
 
 Lesson 33: a decision Jev must make once (where the gate goes) asked once, with its consequence, is taken at
 .7-1.0; spread over thirty building questions it was a .5 coin flip each time. Code then removes what would undo it.
+
+### Correction to round 22 (2026-10-07)
+124331 and 124333 stopped at q17: the tower question had 271 and 257 different options, over the endpoint's 255,
+and the run ended there; the judge scored 16-building towns. Only 124335 was complete. The "3/3" above is wrong:
+1/3. Fixes: a question with more than 255 options is asked in parts (each part at most 255, nearest the CC first,
+then a final question among the parts' picks: every pick is Jev's); the judge refuses an incomplete run (no pass).
+Re-run of the round-22 design, complete towns: 125641, 125643, 125645: relative 2/3, gate sides 3, 3, 3, back
+opening 40, 34, 42 m in every run.
+
+## Rounds 23-24: the back opening and the metal-mine corner (2026-10-07)
+
+Why the back opening: Petra's field (source run, minute 8) lands in the middle of ring 1's back (u -15..7) unless a
+building stands there first; fields do not block units, so the judge sees the hole. Jev built the back from its
+corners inward ("closes the corner ..."), and the middle spots stood alone ("10 m from its nearest building",
+.01-.03 at q6/q7/q9). Why the metal corner: the mine sits on the ring's front-right corner; nothing could close
+against it, and the judge did not count the mine.
+
+Changes (town17): a side answered "no gate" gets a spot in its middle on the ring's inner face, "in the middle of
+the back side of the first ring, which has no gate" (the counterpart of the gate-edge spots); spots flush against a
+mine's clearance square, "against the edge of the metal mine"; side-closing facts back on (a gate strip keeps its
+side open, so they can no longer close a gate); a gate position a mine stands in is impossible (no way through);
+the judge counts stone/metal mines as walls (terrain, 5 m half-size, inside the builder's 6 m clearance) for Jev's
+town and v1's alike - never ring pieces, fields still not walls. v1 unchanged: 8 ways out, 96 m, gate sides 2,
+corner/back 3, street 0.
+
+| round | runs | relative + front/left/right | back opening | metal corner | notes |
+|---|---|---|---|---|---|
+| 23 | 130314, 130316, 130318 | Y, n (left 34 m), Y | 0, 0, 0 m | closed x3 | right gate now 10 m NW of the middle (.51-.55); 130316: ring 2 at q3, left flank back half empty |
+| 24 (+ position words only on ring/gate spots) | 130732, 130734, 130736 | Y, n (9 ways out), Y | 32, 10, 0 m | 4 m slit x3 | worse; dropped |

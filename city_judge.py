@@ -233,15 +233,31 @@ def street_gaps(ps, ring) -> list:
     return [round(min(R.Map.gap(p["rect"], q) for q in r0), 1) for p, k in zip(ps, ring) if k == 1 and r0]
 
 
-def measure_town(cc, ps, want) -> dict:
-    """v1's measures on a town (ring pieces = City Planner buildings only; Petra's buildings, fields too, never)."""
+MINE_WALL = 5.0     # a stone or metal mine blocks units: a wall square of this half-size (the builder keeps 6 m clear)
+
+
+def mine_walls(m) -> list:
+    """Terrain that units cannot cross: the stone and metal mines near the civic centre (never ring pieces)."""
+    out = []
+    for k, x, z in m.res:
+        if k in ("stone", "metal"):
+            u, v = m.loc(x, z)
+            if max(abs(u), abs(v)) < 120:
+                out.append({"kind": f"{k} mine", "rect": (u, v, MINE_WALL, MINE_WALL)})
+    return out
+
+
+def measure_town(cc, ps, want, terrain=()) -> dict:
+    """v1's measures on a town (ring pieces = City Planner buildings only; Petra's buildings, fields too, never;
+    mines block the ways out as terrain)."""
     ring = rings_of(cc, ps)
     r0 = [p for p, k in zip(ps, ring) if k == 0]
+    terrain = list(terrain)
 
     def ext(pp):
         return int(max([abs(p["rect"][0]) + p["rect"][2] for p in pp] + [abs(p["rect"][1]) + p["rect"][3] for p in pp] + [45])) + 15
-    fl = flood(cc, ps, WALL_GROW, ext(ps), centre=True, max_gates=TOWN_MAX_GATES)   # the city as a wall: every City Planner building
-    fl0 = flood(cc, r0, WALL_GROW, ext(r0), centre=True, max_gates=TOWN_MAX_GATES)  # ring 0 alone (reported, not checked)
+    fl = flood(cc, ps + terrain, WALL_GROW, ext(ps), centre=True, max_gates=TOWN_MAX_GATES)   # the city as a wall
+    fl0 = flood(cc, r0 + terrain, WALL_GROW, ext(r0), centre=True, max_gates=TOWN_MAX_GATES)  # ring 0 alone (reported)
     gates = fl["gates"]
     gaps = street_gaps(ps, ring)
     lo, hi = want["street_m"]
@@ -305,13 +321,17 @@ def judge_town(run, v1_cache={}) -> dict:
     import city_v1
     want = CHECKS["town"][run["civ"].split()[0]]
     m, ps = town_jev(run)
-    jev = measure_town(m.rect(m.cc), ps, want)
+    jev = measure_town(m.rect(m.cc), ps, want, mine_walls(m))
     until = run["source"]["until"]
     if until not in v1_cache:
         vm, vps, left, vdrop = city_v1.v1_town(until)
-        v1_cache[until] = (vm, vps, left, measure_town(vm.rect(vm.cc), vps, want))
+        v1_cache[until] = (vm, vps, left, measure_town(vm.rect(vm.cc), vps, want, mine_walls(vm)))
     vm, vps, left, v1 = v1_cache[until]
-    out = {"jev": jev, "v1": {**v1, "left_to_petra": left}, "relative": relative(jev, v1),
+    rel = relative(jev, v1)
+    complete = len([x for x in run["steps"] if x.get("rect")]) == len(run["source"]["events"]) and not run["summary"].get("error")
+    if not complete:                       # a run that stopped early is a smaller town: no pass
+        rel = {**rel, "pass": False, "incomplete": run["summary"].get("error") or "stopped early"}
+    out = {"jev": jev, "v1": {**v1, "left_to_petra": left}, "relative": rel, "complete": complete,
            "v1_buildings": [{**R.rect_world(vm, p["rect"], p["kind"]), "ring": p["ring"], "side": p["side"],
                              "minute": p["minute"]} for p in vps]}
     (R.RUNS_DIR / f"{run['id']}.judge.json").write_text(json.dumps(out, indent=1))
@@ -325,7 +345,8 @@ def town_line(rid, j) -> str:
                 f"rings {f['ring0']}/{f['ring1']}/+{f['beyond']}, street {f['street_ok']} {f['street_gaps']}, ring 0 alone {f.get('ring0_openings')}")
     rel = j["relative"]
     cmp = ", ".join(f"{k} {j['jev']['rel'][k]} vs {j['v1']['rel'][k]}{'' if rel['ok'][k] else ' X'}" for k in REL)
-    return f"{rid}: RELATIVE {'PASS' if rel['pass'] else 'no'} ({cmp})\n  jev {one(j['jev'])}\n  v1  {one(j['v1'])}"
+    inc = f" INCOMPLETE: {rel['incomplete']}" if rel.get("incomplete") else ""
+    return f"{rid}: RELATIVE {'PASS' if rel['pass'] else 'no'}{inc} ({cmp})\n  jev {one(j['jev'])}\n  v1  {one(j['v1'])}"
 
 
 def latest(n, pattern="*timeline*"):
