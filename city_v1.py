@@ -132,12 +132,13 @@ class V1:
         return None
 
 
-def v1_town(until: int):
+def v1_town(until: int, events: list | None = None):
     """v1's town on the same timeline the City Planner gets: the same queued buildings at the same minutes, Petra's
-    other structures where she put them (dropped when a v1 building stands there).  Returns (final Map, pieces,
-    left_to_petra)."""
+    other structures where she put them (dropped when a v1 building stands there).  ``events``: the buildings to
+    place (a live game: the ones that stood by then), else every City Planner plan queued up to ``until``.
+    Returns (final Map, pieces, left_to_petra)."""
     snaps = R.load_all(R.TOWN_LOG)
-    events = R.queue_events(R.TOWN_LOG, until)
+    events = events if events is not None else R.queue_events(R.TOWN_LOG, until)
     hs = {"w": R.PITCH, "d": R.PITCH, "tpl": "house"}
     placed, dropped, left, v1, m = [], {}, [], None, None
     for ev in events:
@@ -153,5 +154,5 @@ def v1_town(until: int):
             left.append(ev["kind"])
             continue
         placed.append({"kind": ev["kind"], "rect": got[0], "ring": got[1], "side": got[2], "minute": ev["minute"]})
-    m, _ = R.town_maps(snaps, events[-1]["minute"], placed, dropped, hs)
+    m, _ = R.town_maps(snaps, until if events else 0, placed, dropped, hs)
     return m, placed, left, dropped

@@ -697,3 +697,22 @@ Jev vs v1: ways out 7, 7, 4 vs 8; width 60, 46, 30 vs 96 m; gate sides 3 vs 2; c
 Stop after 6 rounds (23-28): the full rule (relative + F/L/R, back <= 14 m, metal closed) holds in 2/3 of round 28;
 valid runs of the final design (132053, 132055, 132632, 132634, 132636): 4 of 5. 132632 fails without any split: the
 back middle again empty when Petra's field lands (minute 8).
+
+## The round-28 design in a live game (2026-10-07)
+
+Ported to the game (0AD strategos/v2 e4e8eca3fa, 9f3d15e475, 4662888f1c): every City Planner building Petra queues
+is held and asked (gate questions per ring side, side-first split above 255, impossible-spot rules), built at the
+spot through her queue. Lab rebuild of 132636/132634 with the asker's modules: 60/60 building questions, 28/28 gate
+questions identical. planner_classes.json now lives in the mod (city/), read by the game, the asker and the lab.
+
+Live game 20261007-142707 (solo.sh --model jev --vs petra, spart vs spart, mainland seed 1, aegean, circle, headless
+1x, 21 minutes; the 1-player source run's map differs because of the second player). First try 20261007-141655
+stopped at minute 6: a placed barracks waiting for stone held every house behind it; fix 4662888f1c (planned plans
+in the map, one asked at a time).
+- 11 City Planner answers (houses, barracks, a defense tower via the side-first split, a temple); ring-1 gates: front
+  middle .78, left flank 10 m SE .85, right flank 10 m NW .91, back "no gate" 1.0.
+- At minute 20 six of them stood (the other five were placed but waiting for Petra's resources); every one exactly
+  at Jev's spot: distance median 0.0 m, max 0.1 m.
+- Judge (city_game.py; v1 places the same six buildings at the same minutes on this game's map): ways out 1 vs 1,
+  width 80 vs 138 m (one back-corner opening each: ring 1 not closed yet), gate sides 0 vs 0, corner/back 1 vs 1,
+  street 0 vs 0 (no second ring): relative pass, absolute v1 measures not met by either.

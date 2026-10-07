@@ -80,31 +80,41 @@ def main(argv=None) -> int:
             used.add(s["id"])
             d = math.hypot(s["x"] - pos[0], s["z"] - pos[1])
             dists.append(d)
-            step.update(kind=kind_of(s), rect=list(m.rect(s)), slot_dist=round(d, 1),
+            step.update(kind=kind_of(s), rect=list(m.rect(s)), slot_dist=round(d, 1), tpl_src=s["tpl"],
                         building=R.rect_world(m, m.rect(s), kind_of(s)), done=s["done"])
         else:
             step.update(kind=None, slot_dist=None, note="no building at this spot by minute %d" % minute)
         steps.append(step)
     for s in mine:                             # City Planner buildings Petra placed herself (released plans)
         if s["id"] not in used:
-            steps.append({"n": len(steps) + 1, "minute": minute, "kind": kind_of(s), "rect": list(m.rect(s)),
+            steps.append({"n": len(steps) + 1, "minute": minute, "kind": kind_of(s), "rect": list(m.rect(s)), "tpl_src": s["tpl"],
                           "building": R.rect_world(m, m.rect(s), kind_of(s)), "text": "placed by Petra (released)",
                           "p": None, "slot_dist": None, "done": s["done"], "top": []})
     goal = next((ln[6:] for r in answers for ln in (r.get("io", {}).get("prompt") or "").splitlines()
                  if ln.startswith("Goal: ")), R.civ_line("spart"))
     events = R.queue_events(log, minute)
+    # v1 gets the same buildings that stood at that minute, each at the minute of its answer (like for like)
+    tpl_info = {}
+    v1_events = []
+    for x in steps:
+        if x.get("rect") and x.get("tpl_src"):
+            info = tpl_info.setdefault(x["tpl_src"], R.template_info(x["tpl_src"]))
+            v1_events.append({"minute": x["minute"] if x["minute"] is not None else minute, "t": 0, "tpl": x["tpl_src"],
+                              "kind": info["kind"], "cls": info["planner"], "w": info["w"], "d": info["d"]})
     rid = f"{run_dir.name}-game-spart"
     built = [x for x in steps if x.get("rect")]
     run = {"id": rid, "mode": "real", "town": True, "timeline": True, "game": True, "variant": "game", "civ": "spart",
            "dry": False, "goal_text": goal, "started": run_dir.name,
            "source": {"log": str(log), "until": minute, "minutes": [e["minute"] for e in events],
-                      "events": [{k: e[k] for k in ("minute", "t", "tpl", "kind")} for e in events]},
+                      "events": [{k: e[k] for k in ("minute", "t", "tpl", "kind")} for e in events],
+                      "v1_events": sorted(v1_events, key=lambda e: e["minute"])},
            "rule": "in-game town: City Planner buildings at minute %d (live game %s)" % (minute, run_dir.name),
            "maps": {str(minute): R.map_payload(m)}, "map": R.map_payload(m), "dropped": [],
            "steps": [dict(x, minute=minute) if x.get("minute") is None else x for x in steps if x.get("rect")],
            "summary": {"buildings": len(built), "houses": len(built), "answers": len(answers),
                        "at_spot_median_m": round(statistics.median(dists), 1) if dists else None},
-           "gates": [{"after": None, "ring": None, "side": g["kind"].replace("gate_", ""), "t": None, "rect": None,
+           "gates": [{"after": None, "ring": next((i for i, w in enumerate(R.ORD) if w and f"of the {w} ring" in str(g.get("io", {}).get("prompt", "")).splitlines()[-1]), None),
+                      "side": g["kind"].replace("gate_", ""), "t": None, "rect": None,
                       "p": float(g.get("p") or 0),
                       "text": value(g.get("io", {}).get("request", {})).get("questions", {}).get(g["kind"], {})
                                   .get("criteria", {}).get(g["choice"], g["choice"])} for g in gates],

@@ -324,10 +324,12 @@ def judge_town(run, v1_cache={}) -> dict:
     m, ps = town_jev(run)
     jev = measure_town(m.rect(m.cc), ps, want, mine_walls(m))
     until = run["source"]["until"]
-    if until not in v1_cache:
-        vm, vps, left, vdrop = city_v1.v1_town(until)
-        v1_cache[until] = (vm, vps, left, measure_town(vm.rect(vm.cc), vps, want, mine_walls(vm)))
-    vm, vps, left, v1 = v1_cache[until]
+    v1_events = run["source"].get("v1_events")         # a live game: v1 places the buildings that stood then
+    key = (until, str(R.TOWN_LOG), json.dumps(v1_events))
+    if key not in v1_cache:
+        vm, vps, left, vdrop = city_v1.v1_town(until, v1_events)
+        v1_cache[key] = (vm, vps, left, measure_town(vm.rect(vm.cc), vps, want, mine_walls(vm)))
+    vm, vps, left, v1 = v1_cache[key]
     rel = relative(jev, v1)
     complete = run.get("game") or (len([x for x in run["steps"] if x.get("rect")]) == len(run["source"]["events"])
                                    and not run["summary"].get("error"))      # a game's town is what stands then

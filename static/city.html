@@ -137,7 +137,7 @@
         var o = document.createElement("option");
         o.value = e.id;
         o.textContent = e.mode === "real"
-          ? (/^town/.test(e.variant) ? "town · " + e.variant + " · " + e.goal + " · " + e.houses + " buildings" + (e.dry ? " · DRY (no Jev)" : "") + "  ·  " + e.id.slice(0, 15) + (e.error ? "  ·  error" : "") :
+          ? (/^(town|game)/.test(e.variant) ? "town · " + e.variant + " · " + e.goal + " · " + e.houses + " buildings" + (e.dry ? " · DRY (no Jev)" : "") + "  ·  " + e.id.slice(0, 15) + (e.error ? "  ·  error" : "") :
             (e.variant === "timeline1" ? "timeline · " : "real map · ") + e.goal + " · " + e.houses + " houses · touching " + e.touching_another +
             (e.dropped != null ? " · dropped " + e.dropped : "") +
             (e.dry ? " · DRY (no Jev)" : "") + "  ·  " + e.id.slice(0, 15) + (e.error ? "  ·  error" : ""))
