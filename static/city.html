@@ -59,6 +59,17 @@
   .r-lbl { fill: var(--muted); font-size: 7px; }
   .dry { color: var(--warn); font-weight: 600; }
   .r-drop { fill: none; stroke: var(--err); stroke-width: 1; stroke-dasharray: 3 2; }
+  .r-bld { stroke: #fff; stroke-width: .5; }
+  .r-bld.k-house { fill: var(--c-action); }
+  .r-bld.k-mil { fill: var(--lane-0); }
+  .r-bld.k-civ { fill: var(--lane-4); }
+  .r-bld.k-tower { fill: var(--err); }
+  .r-bld.last { stroke: var(--hl); stroke-width: 1.6; }
+  .r-gate { fill: none; stroke: var(--warn); stroke-width: 1.4; }
+  .board-title { font-size: 12.5px; font-weight: 600; margin: 0 0 6px; }
+  .judge { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 10px; }
+  .judge th, .judge td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left; vertical-align: top; }
+  .judge th { color: var(--muted); font-weight: 500; }
   @media (max-width: 600px) { .city-body { padding: 16px 16px; } }
 </style>
 </head>
@@ -84,6 +95,11 @@
         <span id="step-n" class="mono">0/0</span>
       </div>
     </div>
+    <div class="city-board" id="v1-wrap" hidden>
+      <p class="board-title">v1's town on the same timeline (city.js street grid, ported)</p>
+      <svg id="board-v1" viewBox="0 0 430 430" role="img" aria-label="v1 town"></svg>
+      <p class="muted small" id="v1-note"></p>
+    </div>
     <aside class="city-side" id="side"><p class="muted">No run loaded.</p></aside>
   </div>
 </main>
@@ -93,7 +109,8 @@
   var NS = "http://www.w3.org/2000/svg", C = 40, M = 30;  // cell px, margin for axis labels
   var runSel = document.getElementById("run"), slider = document.getElementById("step");
   var board = document.getElementById("board"), side = document.getElementById("side");
-  var run = null;
+  var boardV1 = document.getElementById("board-v1"), v1Wrap = document.getElementById("v1-wrap");
+  var run = null, judge = null;
 
   function el(tag, attrs, text) {
     var e = document.createElementNS(NS, tag);
@@ -120,9 +137,10 @@
         var o = document.createElement("option");
         o.value = e.id;
         o.textContent = e.mode === "real"
-          ? (e.variant === "timeline1" ? "timeline · " : "real map · ") + e.goal + " · " + e.houses + " houses · touching " + e.touching_another +
+          ? (/^town/.test(e.variant) ? "town · " + e.variant + " · " + e.goal + " · " + e.houses + " buildings" + (e.dry ? " · DRY (no Jev)" : "") + "  ·  " + e.id.slice(0, 15) + (e.error ? "  ·  error" : "") :
+            (e.variant === "timeline1" ? "timeline · " : "real map · ") + e.goal + " · " + e.houses + " houses · touching " + e.touching_another +
             (e.dropped != null ? " · dropped " + e.dropped : "") +
-            (e.dry ? " · DRY (no Jev)" : "") + "  ·  " + e.id.slice(0, 15) + (e.error ? "  ·  error" : "")
+            (e.dry ? " · DRY (no Jev)" : "") + "  ·  " + e.id.slice(0, 15) + (e.error ? "  ·  error" : ""))
           : (e.variant || "?") + " · " + (e.goal || "square6") + " · tier " + (e.tier || "A") +
             " · " + e.on_target + "/" + (e.total || e.steps || 0) + "  ·  " + e.id.slice(0, 15) + (e.error ? "  ·  error" : "");
         runSel.appendChild(o);
@@ -186,6 +204,23 @@
 
   // -- real-map mode: territory, resources, structures as rotated rectangles, slots, houses --------
   function loadReal(r) {
+    judge = null;
+    v1Wrap.hidden = !r.town;
+    if (r.town) {
+      getJSON("/static/city/runs/" + encodeURIComponent(r.id) + ".judge.json")
+        .then(function (j) { judge = j; render(); })
+        .catch(function () { document.getElementById("v1-note").textContent = "not judged yet: python3 city_judge.py " + r.id; });
+      var nb = r.steps.filter(function (s) { return s.building; }).length;
+      slider.max = nb;
+      slider.value = nb;
+      document.getElementById("summary").innerHTML = "town on the real timeline (minutes 0–" + esc(r.source.until) + ") · <b>" +
+        esc(r.civ) + "</b> · " + nb + "/" + r.source.events.length + " buildings · variant " + esc(r.variant) +
+        " · Petra structures dropped " + (r.dropped || []).length + (r.dry ? ' · <span class="dry">DRY run, no Jev (first option taken)</span>' : "") +
+        (r.summary && r.summary.error ? ' · <span class="off-t">' + esc(r.summary.error) + "</span>" : "");
+      document.getElementById("status").textContent = "started " + r.started;
+      render();
+      return;
+    }
     var placed = r.steps.filter(function (s) { return s.house; }).length;
     slider.max = placed;
     slider.value = placed;
@@ -209,7 +244,21 @@
     return out;
   }
 
-  function drawReal(r, k) {
+  function kindClass(kind) {
+    return kind === "house" ? "k-house" : /tower/.test(kind) ? "k-tower" : /barracks|stable|arsenal|forge/.test(kind) ? "k-mil" : "k-civ";
+  }
+  function drawBuildings(svg, X, Y, list, lastIdx, poly) {
+    list.forEach(function (b, i) {
+      var g = el("g", {});
+      g.appendChild(el("title", {}, b.title));
+      g.appendChild(poly(corners(b.x, b.z, b.a, b.w - 1, b.d - 1), "r-bld " + kindClass(b.kind) + (i === lastIdx ? " last" : "")));
+      g.appendChild(el("text", {"class": "r-num", x: X(b.x), y: Y(b.z) + 2.5, "text-anchor": "middle"}, b.label));
+      svg.appendChild(g);
+    });
+  }
+
+  function drawReal(r, k, svg, only) {
+    var board = svg || document.getElementById("board");
     board.innerHTML = "";
     var step = k >= 1 ? r.steps[k - 1] : r.steps[0];
     var m = (r.maps && step && r.maps[String(step.minute)]) || r.map, t = m.territory, c = t.cell, PAD = 10;
@@ -254,10 +303,30 @@
         board.appendChild(g);
       }
     });
-    if (step && step.slots) Object.keys(step.slots).forEach(function (id) {
+    if (only === "v1") {                              // v1's own town up to this step's minute
+      var upto = step ? step.minute : 0, vl = (judge && judge.v1_buildings || []).filter(function (b) { return b.minute <= upto; });
+      drawBuildings(board, X, Y, vl.map(function (b, i) {
+        return {x: b.x, z: b.z, a: b.a, w: b.w, d: b.d, kind: b.kind, label: i + 1,
+                title: b.kind + " · v1 ring " + b.ring + " " + b.side + " · minute " + b.minute};
+      }), -1, poly);
+      return;
+    }
+    if (step && step.slots && !r.town) Object.keys(step.slots).forEach(function (id) {
       var p = step.slots[id];
       board.appendChild(poly(corners(p[0], p[1], a, hw - 1, hd - 1), "r-slot" + (k >= 1 && id === step.choice ? " pick" : "")));
     });
+    if (r.town) {
+      if (step && step.slots) Object.keys(step.slots).forEach(function (id) {
+        var p = step.slots[id];
+        board.appendChild(poly(corners(p.x, p.z, p.a, p.w - 1, p.d - 1), "r-slot" + (k >= 1 && id === step.choice ? " pick" : "")));
+      });
+      drawBuildings(board, X, Y, r.steps.slice(0, k).filter(function (s) { return s.building; }).map(function (s) {
+        var b = s.building;
+        return {x: b.x, z: b.z, a: b.a, w: b.w, d: b.d, kind: b.kind, label: s.n,
+                title: s.kind + " " + s.n + " (minute " + s.minute + "): " + s.text};
+      }), k - 1, poly);
+      return;
+    }
     r.steps.slice(0, k).forEach(function (s, i) {
       if (!s.house) return;
       var g = el("g", {});
@@ -268,7 +337,33 @@
     });
   }
 
+  function judgeTable() {
+    if (!judge) return "";
+    function gates(f) {
+      return f.gates.map(function (g) { return g.width + " m " + g.side + (g.corner ? " corner" : ""); }).join(", ") || "none";
+    }
+    function row(name, f) {
+      return "<tr><td>" + name + "</td><td class=\"" + (f.match ? "on-t\">all met" : "off-t\">" + esc(f.why)) + "</td><td>" +
+        (f.closed ? "yes" : "no") + "</td><td>" + f.openings + ": " + esc(gates(f)) + "</td><td>" + esc(f.street_ok) +
+        (f.street_gaps.length ? " (" + esc(f.street_gaps.join(", ")) + " m)" : "") + "</td><td>" + f.ring0 + " / " + f.ring1 + " / " + f.beyond + "</td></tr>";
+    }
+    return '<div class="small muted">v1 measures at the last minute (ring pieces = City Planner buildings only)</div>' +
+      '<table class="judge"><tr><th></th><th>result</th><th>ring 0 closed</th><th>openings (≤3, one each at front, left, right)</th>' +
+      "<th>street between rings 8–12 m</th><th>ring 0 / 1 / beyond</th></tr>" + row("Jev", judge.jev) + row("v1", judge.v1) + "</table>";
+  }
+
   function panelReal(r, k) {
+    if (r.town && k === 0) {
+      return "<h3>Before question 1</h3>" + judgeTable() +
+        '<div class="kv2"><span>goal (civ line)</span><span>' + esc(r.goal_text) + "</span>" +
+        "<span>spots</span><span>" + esc(r.rule) + "</span>" +
+        "<span>timeline</span><span>" + r.source.events.length + " City Planner buildings Petra queued, each asked at the minute she queued it: " +
+          esc(r.source.events.map(function (e) { return e.kind + " " + e.minute; }).join(", ")) + "</span>" +
+        "<span>flags</span><span>" + esc(JSON.stringify(r.flags || {})) + "</span></div>" +
+        '<p class="muted small">Left: Jev\'s town (numbers = question). Right: v1\'s town on the same maps, replayed by minute. Dashed: the spots offered. Fields tan; Petra\'s other buildings grey.</p>' +
+        (r.steps[0] ? "<details><summary class=\"small\">Prompt of question 1</summary><pre class=\"prompt mono\">" +
+          esc(r.steps[0].prompt) + "</pre></details>" : "");
+    }
     if (k === 0) {
       return "<h3>Before question 1</h3>" +
         '<div class="kv2"><span>goal (civ line)</span><span>' + esc(r.goal_text) + "</span>" +
@@ -288,7 +383,7 @@
     }).join("");
     var drops = (r.dropped || []).filter(function (d) { return d.minute <= (s.minute || 0); }).map(function (d) {
       return d.tpl.split("/").pop() + " (minute " + d.minute + ")"; });
-    return "<h3>Question " + s.n + " of " + r.steps.length + (s.minute != null ? " · game minute " + s.minute : "") +
+    return "<h3>Question " + s.n + " of " + r.steps.length + (s.kind ? " · " + esc(s.kind) : "") + (s.minute != null ? " · game minute " + s.minute : "") +
       (r.dry ? ' <span class="dry">(dry)</span>' : "") + "</h3>" +
       '<div class="kv2"><span>options</span><span>' + s.n_options + "</span>" +
       (r.timeline ? "<span>Petra dropped</span><span>" + (drops.length ? esc(drops.join(", ")) : "none so far") + "</span>" : "") +
@@ -296,7 +391,7 @@
       "<span>time</span><span>" + (s.ms != null ? s.ms + " ms" : "–") + "</span></div>" +
       '<div class="small muted">Top 3 options</div><table class="top3">' + rows + "</table>" +
       "<details style=\"margin-top:10px\"><summary class=\"small\">Prompt sent</summary><pre class=\"prompt mono\">" +
-      esc(s.prompt) + "</pre></details>";
+      esc(s.prompt) + "</pre></details>" + (r.town ? "<details><summary class=\"small\">v1 measures</summary>" + judgeTable() + "</details>" : "");
   }
 
   function render() {
@@ -305,6 +400,9 @@
       var kr = +slider.value;
       document.getElementById("step-n").textContent = kr + "/" + slider.max;
       drawReal(run, kr);
+      if (run.town) drawReal(run, kr, boardV1, "v1");
+      if (run.town && judge) document.getElementById("v1-note").textContent = "v1 leaves to Petra: " +
+        ((judge.v1.left_to_petra || []).join(", ") || "nothing") + ". Same Petra structures, dropped where a v1 building stands.";
       side.innerHTML = panelReal(run, kr);
       return;
     }

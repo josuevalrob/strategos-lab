@@ -355,3 +355,59 @@ Lessons (round 7):
 - Judge checks per civ: data in `city_data/checks.json`, used for evaluation only.
 - No `if civ` branch, no per-civ dict, no per-civ tuning in city_real.py, city_judge.py or city_probe.py
   (grep: civ codes appear only in usage examples).
+
+## Round 8: the town on the real timeline vs v1's street grid (2026-10-07 morning)
+
+Task: Jev places every City Planner building Petra queued (spart), one question per queued plan, at the minute she
+queued it; Petra's other buildings stay where she put them. Target/score = v1 (strategos/mvp1 city.js).
+
+Setup (`python3 city_real.py --civ spart --town --variant townN [--set k=v] [--flags a,b]`):
+- Source run: runs/solo/20261007-001734 (the only run with `[strategos] queue` lines and snapshots to minute 31).
+  Events = rises in a template's queued-plan count, minutes 0-20: 30 buildings (17 houses, 5 barracks, 4 stables,
+  2 temples, forge, defense tower; minutes 0,0,0,0,2,5,5,5,7,8,9,9,10,11,12,13,13,13,15,15,15,15,16,17,18,18,18,18,19,19).
+- City Planner classes = data, `city_data/planner_classes.json` (House, Corral, Barracks, Forge, Stable, Temple, Arsenal,
+  StoneTower = Defense Tower; SentryTower stays with Petra). Classes + footprint from the templates (parent chain, regex
+  reader: this Python's expat does not load). Snapshot structures with a planner class are removed (they are Jev's job);
+  the rest are Petra's, fixed; one that overlaps a Jev building is dropped from then on (round 5 rule).
+- Spots, derived from what stands (CC, Petra's buildings, Jev's buildings), any footprint: flush (1 m, v1's block gap)
+  against a face or one street (10 m) from it, lined up with either end of that face; town5 adds diagonal spots off a
+  corner (flush/street from both faces: a ring's corner piece) and hole spots (centred in a gap between two Jev
+  buildings that this building closes, <= 2 m left each side). Removed only if impossible: territory (9 points),
+  overlap, trees/berries 1.5 m, mines 6 m (hunt walks away: ignored). Same-text spots = one option (first, nearest
+  the CC). Endpoint cap: 255 criteria (250 ok, 256 -> HTTP 503); the 7 x 8 tower uses its 8 x 8 bounding square.
+- Judge (`city_judge.py <id>`, checks.json "town"): ring pieces = City Planner buildings only (no fields, no anchors).
+  Rings by square distance in the CC frame (ring 0 = pieces starting before the innermost piece's outer face).
+  Openings of ring 0 = flood from the CC, walls grown 1 m (gaps <= 2 m closed), each widest way out's narrowest point.
+  Pass = ring 0 closed with <= 3 openings, exactly one on each of front / left flank / right flank (no corner, no
+  back), each 6-24 m; every ring-1 piece 8-12 m from ring 0 (>= 80 %). v1's own town = `city_v1.py` (city.js rules
+  ported: yard 38, street 10, depth 24, 2 rings, corner 14, gap 1, gates front/left/right, corners-first packing,
+  hole fill; towers left to Petra) on the same events and maps; written to `<id>.judge.json`, drawn on city.html.
+- v1 at minute 20 does NOT meet its own measures: 5 openings (31 m left flank, 15 m right flank, 13 m front, 13 m
+  back, 9 m front corner), rings 22/7, street 0/7 (14-20 m: its buildings sit flush to the outer face of 24 m blocks).
+  Same rules with yard 15..45: never (4-5 openings, always a corner or back one).
+- Map facts: a metal mine stands on the front-right corner of a ring one street from the CC (31, 34 in the CC frame),
+  a stone mine on its right flank (42, 6), trees on the back side; every square distance hits one of them.
+
+| variant | change | runs | judge (Jev) | first wrong step |
+|---|---|---|---|---|
+| town1 | facts: CC side, ring (strip inward), touch, row, "blocks the way out to the front" | 090240 (stopped q17) | - | q1: "touches the civic centre" .32+.25 vs "one street (10 m)" .15; q17 tower: 389 options -> 503 |
+| town2 | gap words "built against" / "a street (10 m) between it and" (probe q1: street .55 vs against .26; "with no street between them" .39 vs .37) | 090553 | 3 openings (27 m right flank, 11 m back corner, 9 m front corner), rings 11/3/+16 | q6: starts ring 2 ("stands apart") before ring 1 closes; q10 "built against the first ring" .42 |
+| town3 | rings by square distance; each ring's openings walked on a loop; option says what it does to an opening | 091311 | 2 openings (9 m, 3 m corners), no gate, street 1/7 | q7: stable "in the first ring, built against the civic centre" .53 (the band counted it in the ring) |
+| town4 | ring street = median; "between the CC and the ring" for intruders; shoulder to shoulder only within a ring; option lists the openings the ring is left with ("a gate one street wide") | 091506 | 3 openings (49 m right flank, 2 corners), street 0/12 | q3: flat answers (.18/.15/.14); ring 2 flush onto ring 1 (q11-13) |
+| town5 | town4 + diagonal + hole spots | 092541, 092744, 092759, 092829 | 3 / 0 / 2 openings, never a gate on front + left; street 10/18 in 092541, 0/3-0/4 in the others | ring 1 is built (q1-q11, one street out); then ring 2 starts while ring 1 still has 66 m open (q12) |
+
+Jev is not deterministic here: q1 of town5, same prompt, s11 .42 / s4 .33 vs s4 .37 / s11 .33 (092541 vs 092744);
+the runs split from q1 on. 3/3 needs margins, not ties.
+
+Lessons (round 8):
+17. Street words: "a street (10 m) between it and the civic centre" vs "built against the civic centre" moves q1 from
+    touching (.57) to one street (.55); "with no street between them" (negated noun) does not (.39 vs .37). Lesson 13 again.
+18. A ring is a square distance band; a building that starts inside a ring's street must not be called "in the ring"
+    (town3 q7 .53), else the ring's own street word in the state changes to "built against the civic centre".
+19. "Shoulder to shoulder" counted across rings pulls the next ring flush onto the last (town2/3); count it only
+    along a ring.
+20. Spots from face ends alone cannot turn a square corner: rows start at the CC's face ends and the corner piece lands
+    5-6 m off, so the ring spirals out. Diagonal spots (off a corner, a street from both faces) and hole spots fix the
+    geometry (town5: ring 1 one street out, ring 2 one street outside it).
+21. Feasibility first: at minute 20 even v1's own rules leave corner/back openings on this map (mines, trees, 30
+    buildings); a pass needs the ring routed around the metal mine.

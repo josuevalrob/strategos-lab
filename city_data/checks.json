@@ -19,5 +19,26 @@
  "germ": {
   "houses_touching_max": 0,
   "next_to_field_or_wood_min": 0.75
+ },
+ "town": {
+  "_doc": "v1's measures (strategos/mvp1 city.js) for a town run (city_real.py --town): ring pieces = City Planner buildings only (fields and Petra's other buildings never count). Ring 0 = pieces with no other piece between them and the civic centre. ring_closed: no way out of ring 0 except its openings; openings_max: at most that many; gates_at: exactly one opening on each of these sides and none elsewhere (no corner); gate_m: an opening's width range (v1: a 10 m street, widened by less than one building); street_m + street_share_min: the gap from each ring-1 piece to the ring-0 piece straight inward (v1: 10 m).",
+  "spart": {
+   "ring_closed": true,
+   "openings_max": 3,
+   "gates_at": [
+    "front",
+    "left flank",
+    "right flank"
+   ],
+   "gate_m": [
+    6,
+    24
+   ],
+   "street_m": [
+    8,
+    12
+   ],
+   "street_share_min": 0.8
+  }
  }
 }

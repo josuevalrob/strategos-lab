@@ -2,6 +2,8 @@
 """Judge a real-map city run against the facts its civ line asks for -- evaluation only, never read by the builder.
 
     python3 city_judge.py <run id> [...]        # or: python3 city_judge.py --latest 9
+    A town run (city_real.py --town) is judged on v1's measures (checks.json "town") next to v1's own town
+    (city_v1.py, same timeline); both land in static/city/runs/<id>.judge.json for the page.
 
 The checks per civ are data (city_data/checks.json); this code only computes generic facts:
 - Walls = the civic centre + every ring piece (Jev's houses and Petra's structures) grown by TOL/2, so
@@ -71,9 +73,14 @@ def angdiff(a, b):
 
 
 def flood_gates(b, ps) -> dict:
+    return flood(b.cc_rect, ps, R.TOL / 2, HALF, b.m.house_w)
+
+
+def flood(cc, ps, grow, HALF, house_w=14) -> dict:
+    """Ways out from the civic centre between the pieces `ps` (each grown by `grow` m, so gaps up to 2 x grow are
+    closed), on 1 m cells |u|, |v| <= HALF; each way out's narrowest point is a gate, walled off before the next."""
     n = 2 * HALF + 1
     wall = bytearray(n * n)
-    cc = b.cc_rect
 
     def paint(buf, r, g):
         u0, u1 = int(math.floor(r[0] - r[2] - g)) + HALF, int(math.ceil(r[0] + r[2] + g)) + HALF
@@ -81,7 +88,7 @@ def flood_gates(b, ps) -> dict:
         for i in range(max(0, u0), min(n, u1 + 1)):
             buf[i * n + max(0, v0): i * n + min(n, v1 + 1)] = b"\x01" * (min(n, v1 + 1) - max(0, v0))
     for p in ps:
-        paint(wall, p["rect"], R.TOL / 2)
+        paint(wall, p["rect"], grow)
     # clearance (4-neighbour steps to the nearest ring piece; the civic centre itself does not narrow a way out)
     clear = [0 if wall[c] else 10 ** 6 for c in range(n * n)]
     dq = deque(c for c in range(n * n) if wall[c])
@@ -133,9 +140,9 @@ def flood_gates(b, ps) -> dict:
         ang = math.degrees(math.atan2(gj - HALF, gi - HALF)) % 360
         cell = (gi - HALF, gj - HALF, 0.5, 0.5)
         two = sorted(ps, key=lambda p: R.Map.gap(cell, p["rect"]))[:2]
-        width = 2 * bott - 1 + int(R.TOL)
+        width = 2 * bott - 1 + round(2 * grow)
         gates.append({"at": round(ang), "width": width, "between": [p["kind"] for p in two],
-                      "petra_slit": all(p["kind"] != "house" for p in two) and width < b.m.house_w,
+                      "petra_slit": all(p["kind"] != "house" for p in two) and width < house_w,
                       "slit": width < SLIT_M,
                       "side": min(SECTORS, key=lambda s: angdiff(ang, SECTORS[s])),
                       "corner": any(angdiff(ang, k) <= 15 for k in (45, 135, 225, 315)),
@@ -189,8 +196,106 @@ def judge(run) -> dict:
     return facts
 
 
+# == round 8+: the town against v1's measures (city_v1.py draws v1's own town on the same timeline) ===========
+WALL_GROW = 1.0     # town: gaps up to 2 m are closed to units (v1's blocks stand 1 m apart)
+
+
+def rings_of(cc, ps) -> list:
+    """Ring index per piece by square distance from the civic centre (the CC's own frame): ring 0 = every piece
+    that starts before the outer face of the innermost piece; ring 1 the same over the rest; and so on."""
+    din = [R.Map.gap(p["rect"], cc) for p in ps]
+    dout = [max(abs(p["rect"][0]) + p["rect"][2], abs(p["rect"][1]) + p["rect"][3]) - cc[2] for p in ps]
+    ring, left, k = [None] * len(ps), set(range(len(ps))), 0
+    while left:
+        first = min(left, key=lambda i: din[i])
+        band = [i for i in left if din[i] < dout[first] - 1]
+        for i in band:
+            ring[i] = k
+        left -= set(band)
+        k += 1
+    return ring
+
+
+def street_gaps(ps, ring) -> list:
+    """For each piece of ring 1: its gap to the nearest ring-0 piece (v1: one street, 10 m)."""
+    r0 = [p["rect"] for p, k in zip(ps, ring) if k == 0]
+    return [round(min(R.Map.gap(p["rect"], q) for q in r0), 1) for p, k in zip(ps, ring) if k == 1 and r0]
+
+
+def measure_town(cc, ps, want) -> dict:
+    """v1's measures on a town (ring pieces = City Planner buildings only; Petra's buildings, fields too, never)."""
+    ring = rings_of(cc, ps)
+    r0 = [p for p, k in zip(ps, ring) if k == 0]
+    half = int(max([abs(p["rect"][0]) + p["rect"][2] for p in r0] + [abs(p["rect"][1]) + p["rect"][3] for p in r0] + [45])) + 15
+    fl = flood(cc, r0, WALL_GROW, half)
+    gates = fl["gates"]
+    gaps = street_gaps(ps, ring)
+    lo, hi = want["street_m"]
+    ok_gaps = [g for g in gaps if lo <= g <= hi]
+    facts = {"buildings": len(ps), "ring0": len(r0), "ring1": ring.count(1), "beyond": sum(k >= 2 for k in ring),
+             "closed": fl["closed"], "openings": len(gates), "gates": gates, "street_gaps": gaps,
+             "street_ok": f"{len(ok_gaps)}/{len(gaps)}", "ring": ring}
+    fails = []
+    if want.get("ring_closed") and not fl["closed"]:
+        fails.append(f"ring open ({len(gates)}+ ways out)")
+    if len(gates) > want["openings_max"]:
+        fails.append(f"{len(gates)} openings")
+    sides = sorted(g["side"] for g in gates if not g["corner"])
+    bad = [g for g in gates if g["side"] not in want["gates_at"] or g["corner"]]
+    if bad:
+        fails.append("opening at " + ", ".join(f"{g['side']}{' corner' if g['corner'] else ''} ({g['width']} m)" for g in bad))
+    missing = [s for s in want["gates_at"] if s not in sides]
+    if missing:
+        fails.append("no gate at " + ", ".join(missing))
+    narrow = [g for g in gates if not want["gate_m"][0] <= g["width"] <= want["gate_m"][1]]
+    if narrow:
+        fails.append("gate width " + ", ".join(f"{g['width']} m" for g in narrow))
+    if not gaps:
+        fails.append("no second ring")
+    elif len(ok_gaps) < want["street_share_min"] * len(gaps):
+        fails.append(f"street between rings {len(ok_gaps)}/{len(gaps)} at {lo}-{hi} m")
+    facts["match"] = not fails
+    facts["why"] = "; ".join(fails) or "ok"
+    return facts
+
+
+def town_jev(run):
+    """The City Planner's final town: its pieces in the CC frame, and the last minute's map."""
+    snaps = R.load_all(R.TOWN_LOG)
+    hs = {"w": R.PITCH, "d": R.PITCH, "tpl": "house"}
+    placed = [{"kind": s["kind"], "rect": tuple(s["rect"])} for s in run["steps"] if s.get("rect")]
+    drop = {(d["tpl"], d["x"], d["z"]): d["minute"] for d in run.get("dropped", [])}
+    m, _ = R.town_maps(snaps, run["steps"][-1]["minute"], placed, dict(drop), hs)
+    return m, placed
+
+
+def judge_town(run, v1_cache={}) -> dict:
+    import city_v1
+    want = CHECKS["town"][run["civ"].split()[0]]
+    m, ps = town_jev(run)
+    jev = measure_town(m.rect(m.cc), ps, want)
+    until = run["source"]["until"]
+    if until not in v1_cache:
+        vm, vps, left, vdrop = city_v1.v1_town(until)
+        v1_cache[until] = (vm, vps, left, measure_town(vm.rect(vm.cc), vps, want))
+    vm, vps, left, v1 = v1_cache[until]
+    out = {"jev": jev, "v1": {**v1, "left_to_petra": left},
+           "v1_buildings": [{**R.rect_world(vm, p["rect"], p["kind"]), "ring": p["ring"], "side": p["side"],
+                             "minute": p["minute"]} for p in vps]}
+    (R.RUNS_DIR / f"{run['id']}.judge.json").write_text(json.dumps(out, indent=1))
+    return out
+
+
+def town_line(rid, j) -> str:
+    def one(f):
+        g = ", ".join(f"{x['width']} m {x['side']}{' corner' if x['corner'] else ''}" for x in f["gates"])
+        return (f"{'MATCH' if f['match'] else 'no'} {f['why']} | closed {f['closed']}, openings {f['openings']} [{g}], "
+                f"rings {f['ring0']}/{f['ring1']}/+{f['beyond']}, street {f['street_ok']} {f['street_gaps']}")
+    return f"{rid}:\n  jev {one(j['jev'])}\n  v1  {one(j['v1'])}"
+
+
 def latest(n, pattern="*timeline*"):
-    fs = sorted((f for f in glob.glob(str(R.RUNS_DIR / f"{pattern}.json")) if not f.endswith("-dry.json")),
+    fs = sorted((f for f in glob.glob(str(R.RUNS_DIR / f"{pattern}.json")) if not f.endswith(("-dry.json", ".judge.json"))),
                 key=os.path.getmtime)[-n:]
     return [os.path.basename(f)[:-5] for f in fs]
 
@@ -210,7 +315,7 @@ def main(argv):
         ids = latest(int(ids[1]) if len(ids) > 1 else 3)
     for rid in ids:
         run = json.loads((R.RUNS_DIR / f"{rid}.json").read_text())
-        print(line(rid, judge(run)), flush=True)
+        print(town_line(rid, judge_town(run)) if run.get("town") else line(rid, judge(run)), flush=True)
     return 0
 
 

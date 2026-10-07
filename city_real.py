@@ -110,9 +110,11 @@ class Map:
     # approximated by their bounding square in this frame)
     def rect(self, s):
         u, v = self.loc(s["x"], s["z"])
-        if abs(((s["a"] - self.a + math.pi) % (2 * math.pi)) - math.pi) < 0.05 or \
-                abs(((s["a"] - self.a) % math.pi)) < 0.05:
+        da = (s["a"] - self.a) % math.pi
+        if min(da, math.pi - da) < 0.05:
             return (u, v, s["w"] / 2, s["d"] / 2)
+        if abs(da - math.pi / 2) < 0.05:      # turned a quarter: width runs along the CC's facing
+            return (u, v, s["d"] / 2, s["w"] / 2)
         r = math.hypot(s["w"], s["d"]) / 2
         return (u, v, r, r)
 
@@ -849,6 +851,756 @@ def timeline_run(civ: str, dry: bool, goal_text: str | None = None) -> dict:
     return run
 
 
+# == round 8+: the town -- every City Planner building Petra queued, on the real timeline ==========
+TOWN_LOG = REPO0AD / ".claude/strategos/runs/solo/20261007-001734/engine.log"
+TPL_DIR = REPO0AD / "binaries/data/mods/public/simulation/templates"
+PLANNER = json.loads((DATA / "planner_classes.json").read_text())
+RES_R = {"wood": TREE_R, "food.fruit": TREE_R, "stone": MINE_R, "metal": MINE_R}   # hunt (food.meat) walks away
+FLUSH = 1.0          # shoulder to shoulder: 1 m apart, still closed to units (v1's block gap)
+HOLE_SLACK = 2.0     # a hole spot leaves at most this on each side (the judge closes gaps up to 2 m)
+ORD = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh",
+       "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth"]
+TOWARD = {(0, 1): "right flank", (0, -1): "left flank", (1, 1): "front", (1, -1): "back"}   # (axis, sign) -> CC side
+_TPL: dict = {}
+
+
+def template_info(tpl: str) -> dict:
+    """Identity classes, footprint and planner word of a template, following its parents (templates read only)."""
+    if tpl not in _TPL:
+        import re                      # regex, not ElementTree: this Python's expat does not load
+        chain, name = [], tpl
+        while name:
+            text = re.sub(r"<!--.*?-->", "", (TPL_DIR / f"{name}.xml").read_text(), flags=re.S)
+            chain.append(text)
+            pm = re.search(r'<Entity[^>]*\bparent="([^"]+)"', text)
+            name = pm.group(1) if pm else None
+        toks, size = {"Classes": set(), "VisibleClasses": set()}, None
+        for text in reversed(chain):
+            ident = re.search(r"<Identity[^>]*>(.*?)</Identity>", text, re.S)
+            for tag, attrs, body in re.findall(r"<(Classes|VisibleClasses)([^>]*)>([^<]*)</\1>", ident.group(1) if ident else ""):
+                cls = toks[tag]
+                if "replace" in attrs:
+                    cls.clear()
+                for t in body.split():
+                    cls.discard(t[1:]) if t.startswith("-") else cls.add(t)
+            obst = re.search(r"<Obstruction[^>]*>(.*?)</Obstruction>", text, re.S)
+            st = re.search(r"<Static\b([^>]*)/?>", obst.group(1)) if obst else None
+            if st:
+                at = dict(re.findall(r'(\w+)="([^"]*)"', st.group(1)))
+                size = (float(at["width"]), float(at["depth"]))
+        classes = toks["Classes"] | toks["VisibleClasses"]
+        pc = next((c for c in PLANNER["classes"] if c in classes), None)
+        _TPL[tpl] = {"classes": sorted(classes), "planner": pc, "kind": PLANNER["words"][pc] if pc else short(tpl),
+                     "w": size[0] if size else None, "d": size[1] if size else None}
+    return _TPL[tpl]
+
+
+def planner_struct(st) -> bool:
+    return any(c in PLANNER["classes"] for c in st.get("cls") or [])
+
+
+def queue_events(path: Path, until: int, player: int = 1) -> list:
+    """Every City Planner building Petra queued up to minute `until`: one event per plan that entered a queue
+    (a rise in that template's plan count between two queue lines), at that line's minute."""
+    prev, out = {}, []
+    for line in path.read_text(errors="replace").splitlines():
+        i = line.find("[strategos] queue ")
+        if i < 0:
+            continue
+        q = json.loads(line[i + len("[strategos] queue "):])
+        if q.get("player") != player:
+            continue
+        if q["m"] > until:
+            break
+        cur = {}
+        for qd in q["queues"].values():
+            for p in qd.get("plans", []):
+                if p["what"].startswith("structures/"):
+                    cur[p["what"]] = cur.get(p["what"], 0) + p.get("n", 1)
+        for tpl, c in cur.items():
+            info = template_info(tpl)
+            for _ in range(c - prev.get(tpl, 0)):
+                if info["planner"]:
+                    out.append({"minute": q["m"], "t": q["t"], "tpl": tpl, "kind": info["kind"], "cls": info["planner"],
+                                "w": info["w"], "d": info["d"]})
+        prev = cur
+    return out
+
+
+def overlap(a, b, ax) -> float:
+    """Metres two rects share along axis ax (0 = u, 1 = v)."""
+    return min(a[ax] + a[2 + ax], b[ax] + b[2 + ax]) - max(a[ax] - a[2 + ax], b[ax] - b[2 + ax])
+
+
+class TownBuilder:
+    """Spots, state and options for the next City Planner building, from what stands now.  Never sees a target.
+    Ring pieces = the City Planner's own buildings; Petra's buildings (fields too) are obstacles, never ring pieces."""
+
+    def __init__(self, m: Map, goal: str, placed: list, new: dict):
+        self.m, self.w, self.goal, self.new = m, Words(m), goal.lower(), new
+        self.cc_rect = m.rect(m.cc)
+        self.anchors = [{"kind": short(s["tpl"]), "rect": m.rect(s)} for s in m.structs if s is not m.cc]
+        self.placed = placed                 # [{"kind", "rect"}] the City Planner's buildings so far
+        self.mentions = {k: any(w in self.goal for w in ws) for k, ws in FACT_WORDS.items()}
+
+    # -- spots: flush against a face of what stands, or one street from it; any footprint -------------
+    def shapes(self) -> list:
+        hw, hd = self.new["w"] / 2, self.new["d"] / 2
+        if abs(hw - hd) <= 0.5:          # near-square (a 7 x 8 tower): its bounding square, one shape
+            return [(max(hw, hd), max(hw, hd))]
+        return [(hw, hd), (hd, hw)]
+
+    @staticmethod
+    def around(s, hu, hv, g):
+        su, sv, shu, shv = s
+        for sign in (1, -1):
+            cu = su + sign * (shu + g + hu)
+            for cv in (sv - shv + hv, sv + shv - hv):      # lined up with either end of that face
+                yield cu, cv
+            cv = sv + sign * (shv + g + hv)
+            for cu in (su - shu + hu, su + shu - hu):
+                yield cu, cv
+
+    @staticmethod
+    def diagonal(s, hu, hv, g1, g2):
+        """Off a corner of s: g1 from one face and g2 from the other (a ring's corner piece)."""
+        su, sv, shu, shv = s
+        for a in (1, -1):
+            for b in (1, -1):
+                yield su + a * (shu + g1 + hu), sv + b * (shv + g2 + hv)
+
+    def possible(self, r) -> bool:
+        m = self.m
+        pts = [m.wld(r[0] + a, r[1] + b) for a in (-r[2], 0, r[2]) for b in (-r[3], 0, r[3])]
+        if not all(m.in_terr(x, z) for x, z in pts):
+            return False
+        if Map.gap(r, self.cc_rect) < 0 or any(Map.gap(r, p["rect"]) < 0 for p in self.anchors + self.placed):
+            return False
+        return not any(m.point_gap(r, x, z) < RES_R[k] for k, x, z in m.res if k in RES_R)
+
+    def holes(self, hu, hv):
+        """Spots centred in a gap between two facing City Planner buildings that this building closes on its own
+        (at most HOLE_SLACK m left on each side), lined up with either building's ends."""
+        ps = [p["rect"] for p in self.placed]
+        for i, a in enumerate(ps):
+            for b in ps[i + 1:]:
+                for ax in (0, 1):
+                    o, h = 1 - ax, (hu, hv)
+                    lo, hi = (a, b) if a[ax] < b[ax] else (b, a)
+                    gap = (hi[ax] - hi[2 + ax]) - (lo[ax] + lo[2 + ax])
+                    if overlap(a, b, o) <= 0 or not 2 * h[ax] + 2 * FLUSH <= gap <= 2 * h[ax] + 2 * HOLE_SLACK:
+                        continue
+                    c = (lo[ax] + lo[2 + ax] + hi[ax] - hi[2 + ax]) / 2
+                    for e in (lo, hi):
+                        for oc in (e[o] - e[2 + o] + h[o], e[o] + e[2 + o] - h[o]):
+                            yield (c, oc) if ax == 0 else (oc, c)
+
+    def spots(self) -> list:
+        srcs = [self.cc_rect] + [p["rect"] for p in self.anchors + self.placed]
+        seen, out = set(), []
+        for hu, hv in self.shapes():
+            cands = [c for s in srcs for g in (FLUSH, STREET) for c in self.around(s, hu, hv, g)]
+            if VARIANT.get("holes"):
+                cands += list(self.holes(hu, hv))
+            if VARIANT.get("diag"):
+                cands += [c for s in srcs for g1 in (FLUSH, STREET) for g2 in (FLUSH, STREET)
+                          for c in self.diagonal(s, hu, hv, g1, g2)]
+            for cu, cv in cands:
+                r = (round(cu * 2) / 2, round(cv * 2) / 2, hu, hv)
+                if r not in seen:
+                    seen.add(r)
+                    if self.possible(r):
+                        out.append(r)
+        out.sort(key=lambda r: (Map.gap(r, self.cc_rect), r))
+        return out
+
+    # -- geometry facts --------------------------------------------------------------------------------
+    def radial(self, r):
+        """(axis, sign): the CC side r looks at, by the larger of its two gaps to the civic centre."""
+        c = self.cc_rect
+        gu, gv = abs(r[0]) - r[2] - c[2], abs(r[1]) - r[3] - c[3]
+        ax = 1 if gv >= gu else 0
+        return ax, (1 if r[ax] > 0 else -1)
+
+    def inward(self, r, pieces):
+        """The nearest of `pieces` straight between r and the civic centre: (gap m, piece) or None."""
+        ax, sg = self.radial(r)
+        o, inner = 1 - ax, sg * r[ax] - r[2 + ax]
+        best = None
+        for p in pieces:
+            pr = p["rect"]
+            if pr is r or overlap(r, pr, o) <= 1 or sg * pr[ax] <= 0:
+                continue
+            outer = sg * pr[ax] + pr[2 + ax]
+            if outer <= inner + 0.5 and (best is None or inner - outer < best[0]):
+                best = (inner - outer, p)
+        return best
+
+    def layer(self, r, pieces, memo=None) -> int:
+        memo = {} if memo is None else memo
+        if r in memo:
+            return memo[r]
+        memo[r] = 1
+        hit = self.inward(r, [p for p in pieces if p["rect"] != r])
+        memo[r] = 1 if hit is None else 1 + self.layer(hit[1]["rect"], pieces, memo)
+        return memo[r]
+
+    def side_name(self, r) -> str:
+        return self.w.side(r[0], r[1]).split(" (")[0]
+
+    def face_word(self, r) -> str:
+        """'front side' / 'left flank' ... or 'east corner' for a corner spot."""
+        s = self.w.side(r[0], r[1])
+        if s.startswith("off the "):
+            return s[len("off the "):].split(" of the")[0]
+        return s.split("(its ")[1].rstrip(")") + ("" if "flank" in s else " side")
+
+    def rows(self, pieces) -> list:
+        """Straight rows of 2+ City Planner buildings standing shoulder to shoulder: [(axis, [pieces in order])]."""
+        out = []
+        for ax in (0, 1):
+            for comp in PiecesBuilder.comps(pieces, lambda a, b, ax=ax: inline(a, b, ax)):
+                if len(comp) >= 2:
+                    out.append((ax, sorted((pieces[i] for i in comp), key=lambda p: p["rect"][ax])))
+        return out
+
+    def row_name(self, ax, ps) -> str:
+        rs = [p["rect"] for p in ps]
+        mu, mv = sum(r[0] for r in rs) / len(rs), sum(r[1] for r in rs) / len(rs)
+        return f"the row of {kind_list([p['kind'] for p in ps])} along the {self.face_word((mu, mv, 0, 0))}"
+
+    def gap_words(self, g, what) -> str:
+        sw = VARIANT.get("street_words", "plain")
+        if g <= 1.5:
+            return {"plain": f"touches {what}", "conseq": f"against {what}, with no street between them",
+                    "wall": f"built against {what}"}[sw]
+        if g < 8:
+            return {"plain": f"{metres(g)} from {what}, narrower than a street",
+                    "conseq": f"{metres(g)} from {what}: too narrow for a street",
+                    "wall": f"{metres(g)} from {what}, a narrow lane"}[sw]
+        if g <= 12:
+            return {"plain": f"one street ({metres(g)}) from {what}", "conseq": f"one street ({metres(g)}) from {what}",
+                    "wall": f"a street ({metres(g)}) between it and {what}"}[sw]
+        return {"plain": f"{metres(g)} from {what}, more than one street",
+                "conseq": f"{metres(g)} from {what}: wider than one street",
+                "wall": f"{metres(g)} from {what}, more than a street"}[sw]
+
+    def ring_fact(self, r) -> str:
+        """Which ring r would be in (counted from the civic centre over the City Planner's buildings) and the
+        street between it and what stands straight inward."""
+        hit = self.inward(r, self.placed)
+        if hit is None:
+            out = f"in the first ring, {self.gap_words(Map.gap(r, self.cc_rect), 'the civic centre')}"
+        else:
+            g, p = hit
+            n = self.layer(p["rect"], self.placed)
+            out = f"in the {ORD[n + 1]} ring, {self.gap_words(g, 'the ' + ORD[n] + ' ring')}"
+        a = self.inward(r, self.anchors)
+        if a and a[0] < (hit[0] if hit else Map.gap(r, self.cc_rect)) and a[0] < 8:
+            out += f", {metres(a[0])} from a {a[1]['kind']} on the civic centre's side"
+        return out
+
+    def touch(self, r) -> str:
+        if not self.placed:
+            return "the first building of the city"
+        side_by = [p["kind"] for p in self.placed if inline(r, p["rect"], 0) or inline(r, p["rect"], 1)]
+        if side_by:
+            return "shoulder to shoulder with " + kind_list(side_by)
+        if any(Map.gap(r, p["rect"]) <= TOL for p in self.placed):
+            return "touches a building only at a corner"
+        g = min(Map.gap(r, p["rect"]) for p in self.placed)
+        return f"stands apart, {metres(g)} from the nearest building of the city"
+
+    def row_fact(self, r) -> list:
+        ps, out = self.placed, []
+        rows = self.rows(ps)
+        row_of = {id(p): (ax, rp) for ax, rp in rows for p in rp}
+        for ax in (0, 1):
+            plus = [p for p in ps if inline(r, p["rect"], ax) and p["rect"][ax] > r[ax]]
+            minus = [p for p in ps if inline(r, p["rect"], ax) and p["rect"][ax] < r[ax]]
+
+            def name(p, ax=ax):
+                rw = row_of.get(id(p))
+                return self.row_name(*rw) if rw else f"the {p['kind']} on the {self.face_word(p['rect'])}"
+            if plus and minus:
+                out.append(f"closes the gap between {name(minus[0])} and {name(plus[0])}")
+                continue
+            for nb, sg in ((plus, -1), (minus, 1)):
+                if not nb:
+                    continue
+                rw = row_of.get(id(nb[0]))
+                toward = TOWARD[(ax, sg)]
+                if rw and rw[0] == ax:
+                    out.append(f"continues {self.row_name(*rw)} toward the {toward}")
+                elif rw:
+                    out.append(f"turns at the end of {self.row_name(*rw)}, toward the {toward}")
+                else:
+                    out.append(f"makes a row with {name(nb[0])}, toward the {toward}")
+        return out[:2]
+
+    def gate_fact(self, r) -> str:
+        """The street straight out from the middle of a civic centre face: does r stand in it?"""
+        c, half = self.cc_rect, STREET / 2
+        for ax in (0, 1):
+            o = 1 - ax
+            if abs(r[o]) < r[2 + o] + half and abs(r[ax]) > c[2 + ax]:
+                return f"blocks the way out to the {TOWARD[(ax, 1 if r[ax] > 0 else -1)]}"
+        return ""
+
+    def option_text(self, r) -> str:
+        parts = [f"on the {self.face_word(r)} of the civic centre" if "corner" not in self.face_word(r)
+                 else f"at the {self.face_word(r)} of the civic centre", self.ring_fact(r), self.touch(r)]
+        parts += self.row_fact(r)
+        g = self.gate_fact(r) if VARIANT.get("gate_corridor") else ""
+        if g:
+            parts.append(g)
+        return f"a {self.new['kind']} " + "; ".join(parts)
+
+    # -- state -----------------------------------------------------------------------------------------
+    def state(self) -> str:
+        w, ps = self.w, self.placed
+        lines = [f"Our civic centre: its front faces {w.face['front']}, its flanks face {w.face['left flank']} "
+                 f"and {w.face['right flank']}, its back faces {w.face['back']}."]
+        if not ps:
+            lines.append("Buildings of the city so far: none yet.")
+            return "\n".join(lines)
+        lines.append(f"Buildings of the city so far: {num(len(ps))}: {kind_list([p['kind'] for p in ps])}.")
+        memo = {}
+        by_layer = {}
+        for p in ps:
+            by_layer.setdefault(self.layer(p["rect"], ps, memo), []).append(p)
+        rows = self.rows(ps)
+        for n in sorted(by_layer):
+            members = by_layer[n]
+            ids = {id(p) for p in members}
+            parts, done = [], set()
+            for ax, rp in sorted(rows, key=lambda x: -len(x[1])):
+                if all(id(p) in ids and id(p) not in done for p in rp):
+                    done |= {id(p) for p in rp}
+                    parts.append(f"{self.row_name(ax, rp)[4:]}, {self.dist_words(rp[0]['rect'], ps, n)}")
+            for p in members:
+                if id(p) not in done:
+                    parts.append(f"a single {p['kind']} on the {self.face_word(p['rect'])}, {self.dist_words(p['rect'], ps, n)}")
+            sides = []
+            for p in members:
+                f = self.face_word(p["rect"])
+                if f not in sides:
+                    sides.append(f)
+            missing = [f for f in ("front side", "left flank", "back side", "right flank") if f not in sides]
+            lines.append(f"The {ORD[n]} ring: " + "; ".join(parts) + ". " +
+                         ("Nothing yet on the " + ", the ".join(missing) + "." if missing else "Buildings on all four sides."))
+        return "\n".join(lines)
+
+    def dist_words(self, r, ps, n) -> str:
+        hit = self.inward(r, ps)
+        if hit is None:
+            return self.gap_words(Map.gap(r, self.cc_rect), "the civic centre")
+        return self.gap_words(hit[0], f"the {ORD[n - 1]} ring")
+
+
+class TownBuilder3(TownBuilder):
+    """town3: rings by square distance from the civic centre (the goal's 'square rings'); each ring's openings in
+    words (walked along a square loop through the ring); what a spot does to them."""
+
+    def din(self, r) -> float:
+        return max(0.0, Map.gap(r, self.cc_rect))
+
+    def dout(self, r) -> float:
+        c = self.cc_rect
+        return max(abs(r[0]) + r[2] - c[2], abs(r[1]) + r[3] - c[3])
+
+    def bands(self, ps) -> list:
+        """[(core_in, core_out, members)] innermost first: every piece that starts before the outer face of the
+        innermost one is in that ring; then the same over the rest."""
+        left, out = list(ps), []
+        while left:
+            first = min(left, key=lambda p: self.din(p["rect"]))
+            band = [p for p in left if self.din(p["rect"]) < self.dout(first["rect"]) - 1]
+            ids = {id(p) for p in band}
+            out.append((min(self.din(p["rect"]) for p in band), min(self.dout(p["rect"]) for p in band), band))
+            left = [p for p in left if id(p) not in ids]
+        return out
+
+    def where_rings(self, r, bands):
+        """(k, 'in' | 'inside' | 'outside'): in ring k, inside it (between ring k-1 or the CC and ring k), or outside
+        the last ring k."""
+        for k, (a, b, _) in enumerate(bands, 1):
+            if self.din(r) < b - 1 and self.dout(r) > a + 1:
+                return k, "in"
+            if self.dout(r) <= a + 1:
+                return k, "inside"
+        return len(bands), "outside"
+
+    @staticmethod
+    def street_to(r, members) -> float:
+        return min(Map.gap(r, m["rect"]) for m in members)
+
+    def ring_fact(self, r) -> str:
+        bands = self.bands(self.placed)
+        cc = self.gap_words(self.din(r), "the civic centre")
+        if not bands:
+            return f"starts the first ring, {cc}"
+        k, rel = self.where_rings(r, bands)
+        if rel == "in":
+            if k == 1:
+                return f"in the first ring, {cc}"
+            return f"in the {ORD[k]} ring, {self.gap_words(self.street_to(r, bands[k - 2][2]), 'the ' + ORD[k - 1] + ' ring')}"
+        if rel == "inside":
+            return (f"between the civic centre and the first ring, {cc}" if k == 1 else
+                    f"between the {ORD[k - 1]} and the {ORD[k]} ring, "
+                    f"{self.gap_words(self.street_to(r, bands[k - 2][2]), 'the ' + ORD[k - 1] + ' ring')}")
+        out = f"starts the {ORD[k + 1]} ring, {self.gap_words(self.street_to(r, bands[k - 1][2]), 'the ' + ORD[k] + ' ring')}"
+        if VARIANT.get("open_note"):
+            ops = self.openings(bands[k - 1])
+            if ops:
+                out += f", while the {ORD[k]} ring is still open ({metres(sum(len(o) for o in ops))} of openings)"
+        return out
+
+    # -- openings: a square loop through the middle of a ring, sampled every metre ---------------------
+    def loop(self, band):
+        a, b, _ = band
+        c, L = self.cc_rect, (a + b) / 2
+        hu, hv = c[2] + L, c[3] + L
+        pts = []      # (u, v, side, at a corner): one turn, front -> right flank -> back -> left flank
+        for side, (u0, v0, u1, v1) in (("front side", (-hu, hv, hu, hv)), ("right flank", (hu, hv, hu, -hv)),
+                                        ("back side", (hu, -hv, -hu, -hv)), ("left flank", (-hu, -hv, -hu, hv))):
+            n = max(1, int(round(math.hypot(u1 - u0, v1 - v0))))
+            for i in range(n):
+                t = i / n
+                pts.append((u0 + (u1 - u0) * t, v0 + (v1 - v0) * t, side, i == 0))
+        return pts
+
+    def corner_name(self, u, v) -> str:
+        return self.w.side(math.copysign(100, u), math.copysign(100, v))[len("off the "):].split(" of the")[0]
+
+    def openings(self, band, extra=None) -> list:
+        """Runs of loop points no building of that ring covers (1 m gaps between buildings count as closed)."""
+        pts = self.loop(band)
+        rects = [m["rect"] for m in band[2]] + ([extra] if extra else [])
+        g = FLUSH / 2 + 0.1          # 1 m gaps close; a run of k uncovered metres is a gap of about k + 1 m
+        cov = [any(abs(u - r[0]) <= r[2] + g and abs(v - r[1]) <= r[3] + g for r in rects) for u, v, _, _ in pts]
+        if not any(cov):
+            return [list(range(len(pts)))]
+        start = cov.index(True)
+        runs, cur = [], []
+        for j in range(len(pts)):
+            i = (start + j) % len(pts)
+            if not cov[i]:
+                cur.append(i)
+            elif cur:
+                runs.append(cur)
+                cur = []
+        if cur:
+            runs.append(cur)
+        return runs
+
+    def run_where(self, band, run) -> str:
+        pts = self.loop(band)
+        sides = []
+        for i in run:
+            if pts[i][2] not in sides:
+                sides.append(pts[i][2])
+        corners = [self.corner_name(pts[i][0], pts[i][1]) for i in run if pts[i][3]]
+        if len(run) >= len(pts) - 1:
+            return "all around"
+        if not corners:
+            return f"on the {sides[0]}"
+        if len(corners) == 1:
+            return f"around the {corners[0]}"
+        return "on the " + ", the ".join(sides[:-1]) + " and the " + sides[-1]
+
+    def opening_fact(self, r) -> str:
+        bands = self.bands(self.placed)
+        if not bands:
+            return ""
+        k, rel = self.where_rings(r, bands)
+        if rel != "in":
+            return ""
+        band = bands[k - 1]
+        before, after = self.openings(band), self.openings(band, r)
+        changed = [o for o in before if o not in after]
+        if not changed:
+            return ""
+        o = changed[0]
+        part = [x for x in after if set(x) <= set(o)]
+        ring = f"of the {ORD[k]} ring"
+        where = self.run_where(band, o)
+        if not part:
+            return f"closes the {metres(len(o))} opening {where} {ring}"
+        if len(part) == 1:
+            return f"narrows the opening {where} {ring} from {metres(len(o))} to {metres(len(part[0]))}"
+        return f"splits the opening {where} {ring} into {' and '.join(metres(len(x)) for x in part)}"
+
+    def row_fact(self, r) -> list:
+        """Only along a ring: the same-ring neighbour it continues, toward which side."""
+        bands = self.bands(self.placed)
+        if not bands:
+            return []
+        k, rel = self.where_rings(r, bands)
+        if rel != "in":
+            return []
+        mem = bands[k - 1][2]
+        out = []
+        for ax in (0, 1):
+            plus = [p for p in mem if inline(r, p["rect"], ax) and p["rect"][ax] > r[ax]]
+            minus = [p for p in mem if inline(r, p["rect"], ax) and p["rect"][ax] < r[ax]]
+            if plus and minus:
+                out.append(f"joins two buildings of the {ORD[k]} ring")
+                continue
+            for nb, sg in ((plus, -1), (minus, 1)):
+                if nb:
+                    out.append(f"continues the {ORD[k]} ring from the {nb[0]['kind']} on the {self.face_word(nb[0]['rect'])} "
+                               f"toward the {TOWARD[(ax, sg)]}")
+        return out[:1]
+
+    def option_text(self, r) -> str:
+        fw = self.face_word(r)
+        parts = [f"at the {fw} of the civic centre" if "corner" in fw else f"on the {fw} of the civic centre",
+                 self.ring_fact(r)]
+        t = self.touch(r)
+        if t:
+            parts.append(t)
+        o = self.opening_fact(r)
+        if o:
+            parts.append(o)
+        parts += self.row_fact(r)
+        return f"a {self.new['kind']} " + "; ".join(parts)
+
+    def state(self) -> str:
+        w, ps = self.w, self.placed
+        lines = [f"Our civic centre: its front faces {w.face['front']}, its flanks face {w.face['left flank']} "
+                 f"and {w.face['right flank']}, its back faces {w.face['back']}."]
+        if not ps:
+            lines.append("Buildings of the city so far: none yet.")
+            return "\n".join(lines)
+        lines.append(f"Buildings of the city so far: {num(len(ps))}: {kind_list([p['kind'] for p in ps])}.")
+        bands = self.bands(ps)
+        for k, band in enumerate(bands, 1):
+            a, b, mem = band
+            if k == 1:
+                street = self.gap_words(a, "the civic centre")
+            else:
+                gs = sorted(self.street_to(p["rect"], bands[k - 2][2]) for p in mem)
+                street = self.gap_words(gs[len(gs) // 2], f"the {ORD[k - 1]} ring")
+            ops = self.openings(band)
+            op = ("Openings: " + "; ".join(f"{metres(len(o))} {self.run_where(band, o)}" for o in
+                                          sorted(ops, key=lambda o: -len(o))) + "." if ops else "It is closed all around.")
+            lines.append(f"The {ORD[k]} ring ({street}): {num(len(mem))} building{'s' if len(mem) > 1 else ''}. {op}")
+        return "\n".join(lines)
+
+
+class TownBuilder4(TownBuilder3):
+    """town4: a ring's street = the median inner distance of its buildings, so a building that starts inside it is
+    'between' (not in) the ring; shoulder to shoulder only with buildings of the same ring; each option says the
+    openings the ring is left with ('a gate one street wide' for a street-wide one)."""
+
+    def bands(self, ps) -> list:
+        out = []
+        for _, _, band in super().bands(ps):
+            ins = sorted(self.din(p["rect"]) for p in band)
+            a = ins[len(ins) // 2]
+            b = min(self.dout(p["rect"]) for p in band if self.din(p["rect"]) >= a - 2)
+            out.append((a, b, band))
+        return out
+
+    def where_rings(self, r, bands):
+        for k, (a, b, _) in enumerate(bands, 1):
+            if self.din(r) < a - 2:
+                return k, "inside"
+            if self.din(r) < b - 1:
+                return k, "in"
+        return len(bands), "outside"
+
+    def touch(self, r) -> str:
+        if not self.placed:
+            return "the first building of the city"
+        bands = self.bands(self.placed)
+        k, rel = self.where_rings(r, bands)
+        same = bands[k - 1][2] if rel == "in" else []
+        side_by = [p["kind"] for p in same if inline(r, p["rect"], 0) or inline(r, p["rect"], 1)]
+        if side_by:
+            return f"shoulder to shoulder with {kind_list(side_by)} of the {ORD[k]} ring"
+        g = min(Map.gap(r, p["rect"]) for p in self.placed)
+        if g <= TOL:
+            return ""
+        return f"stands apart, {metres(g)} from the nearest building of the city"
+
+    def op_words(self, band, run) -> str:
+        n, where = len(run) + 1, self.run_where(band, run)
+        if 8 <= n <= 14:
+            return f"a gate one street wide ({metres(n)}) {where}"
+        if n < 8:
+            return f"{metres(n)} {where}, narrower than a street"
+        return f"{metres(n)} {where}"
+
+    def opening_fact(self, r) -> str:
+        bands = self.bands(self.placed)
+        if not bands:
+            return ""
+        k, rel = self.where_rings(r, bands)
+        if rel != "in":
+            return ""
+        band = bands[k - 1]
+        before, after = self.openings(band), self.openings(band, r)
+        if before == after:
+            return ""
+        if not after:
+            return f"closes the {ORD[k]} ring all around: no opening left"
+        return f"leaves the {ORD[k]} ring with these openings: " + ", ".join(
+            self.op_words(band, o) for o in sorted(after, key=lambda o: -len(o)))
+
+    def ring_fact(self, r) -> str:
+        out = super().ring_fact(r)
+        bands = self.bands(self.placed)
+        if bands and out.startswith("starts the"):
+            k = len(bands)
+            wide = sum(len(o) for o in self.openings(bands[-1]) if len(o) > 14)
+            if wide:
+                out += f", while the {ORD[k]} ring is still open ({metres(wide)} of it unbuilt)"
+        return out
+
+    def state(self) -> str:
+        w, ps = self.w, self.placed
+        lines = [f"Our civic centre: its front faces {w.face['front']}, its flanks face {w.face['left flank']} "
+                 f"and {w.face['right flank']}, its back faces {w.face['back']}."]
+        if not ps:
+            lines.append("Buildings of the city so far: none yet.")
+            return "\n".join(lines)
+        lines.append(f"Buildings of the city so far: {num(len(ps))}: {kind_list([p['kind'] for p in ps])}.")
+        bands = self.bands(ps)
+        for k, band in enumerate(bands, 1):
+            a, b, mem = band
+            if k == 1:
+                street = self.gap_words(a, "the civic centre")
+            else:
+                gs = sorted(self.street_to(p["rect"], bands[k - 2][2]) for p in mem)
+                street = self.gap_words(gs[len(gs) // 2], f"the {ORD[k - 1]} ring")
+            ops = sorted(self.openings(band), key=lambda o: -len(o))
+            op = ("Openings: " + "; ".join(self.op_words(band, o) for o in ops) + "." if ops
+                  else "It is closed all around: no opening.")
+            lines.append(f"The {ORD[k]} ring ({street}): {num(len(mem))} building{'s' if len(mem) > 1 else ''}. {op}")
+        return "\n".join(lines)
+
+
+TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4}
+
+
+TOWN_TEMPLATE = """Role: City planner.
+Goal: {goal}
+Map: a real map seen from above. A street is about {street} m wide. The new {kind} is {w} m wide and {d} m deep.
+{state}
+Question {n} of {total}: where does the new {kind} go?"""
+
+
+MAX_OPTIONS = 255    # the Jev endpoint answers 503 above 255 criteria (measured 2026-10-07: 250 ok, 256 refused)
+
+
+def town_build(b: TownBuilder, goal: str, n: int, total: int):
+    """Spots with the same words are one option to Jev (it cannot tell them apart): the first, nearest the CC."""
+    options, seen = [], set()
+    for r in b.spots():
+        t = b.option_text(r)
+        if t not in seen:
+            seen.add(t)
+            options.append({"id": f"s{len(options)}", "rect": r, "text": t})
+    k = b.new
+    prompt = TOWN_TEMPLATE.format(goal=goal, street=STREET, kind=k["kind"], w=round(k["w"], 1), d=round(k["d"], 1),
+                                  state=b.state(), n=n, total=total)
+    return prompt, options
+
+
+def rect_world(m: Map, r, kind: str) -> dict:
+    """A CC-frame rect as the page draws it: centre, angle, width along the angle's local x."""
+    x, z = m.wld(r[0], r[1])
+    return {"kind": kind, "x": round(x, 2), "z": round(z, 2), "a": m.a, "w": 2 * r[2], "d": 2 * r[3]}
+
+
+def town_maps(snaps: dict, minute: int, placed: list, dropped: dict, hsize: dict):
+    """That minute's map without Petra's City Planner buildings and without her structures that stand where a
+    City Planner building stands (dropped from then on)."""
+    snap = json.loads(json.dumps(snaps[minute]))
+    snap["structures"] = [st for st in snap["structures"] if not planner_struct(st) and skey(st) not in dropped]
+    m = Map(snap, hsize)
+    new_drops = [st for st in snap["structures"] if "civil_centre" not in st["tpl"] and
+                 any(Map.gap(m.rect(st), p["rect"]) < 0 for p in placed)]
+    for st in new_drops:
+        dropped[skey(st)] = minute
+    snap["structures"] = [st for st in snap["structures"] if skey(st) not in dropped]
+    return Map(snap, hsize), new_drops
+
+
+def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None) -> dict:
+    snaps = load_all(TOWN_LOG)
+    events = queue_events(TOWN_LOG, until)
+    hsize = {"w": PITCH, "d": PITCH, "tpl": "house"}
+    goal = goal_text or civ_line(civ)
+    now = datetime.now()
+    run = {"id": f"{now:%Y%m%d-%H%M%S}-{VARIANT['name']}-{civ}" + ("-prop" if goal_text else "") + ("-dry" if dry else ""),
+           "mode": "real", "town": True, "timeline": True, "variant": VARIANT["name"],
+           "civ": civ + (" (proposed line)" if goal_text else ""), "dry": dry, "goal_text": goal,
+           "started": now.isoformat(timespec="seconds"),
+           "source": {"log": str(TOWN_LOG), "until": until, "minutes": [e["minute"] for e in events],
+                      "events": [{k: e[k] for k in ("minute", "t", "tpl", "kind")} for e in events]},
+           "template": TOWN_TEMPLATE, "instructions": "Where does the new building go?",
+           "rule": f"spots flush ({FLUSH:g} m) against a face of any standing building or one street ({STREET} m) from it, "
+                   "lined up with either end of that face; impossible spots removed (territory, overlap, resources)",
+           "maps": {}, "dropped": [], "steps": [], "summary": {}, "flags": dict(VARIANT)}
+    placed: list = []
+    dropped: dict = {}
+    for n, ev in enumerate(events, 1):
+        mnt = ev["minute"]
+        m, drops = town_maps(snaps, mnt, placed, dropped, hsize)
+        for st in drops:
+            run["dropped"].append({"minute": mnt, "tpl": st["tpl"], "x": st["x"], "z": st["z"], "a": st["a"],
+                                   "w": st["w"], "d": st["d"], "done": st["done"]})
+        if str(mnt) not in run["maps"]:
+            run["maps"][str(mnt)] = map_payload(m)
+        run.setdefault("map", map_payload(m))
+        b = TOWN_BUILDERS.get(VARIANT["name"], TownBuilder3)(m, goal, placed, ev)
+        prompt, options = town_build(b, goal, n, len(events))
+        if not options:
+            run["summary"]["error"] = f"q{n}: no possible spot for the {ev['kind']}"
+            break
+        if len(options) > MAX_OPTIONS:
+            run["summary"]["error"] = f"q{n}: {len(options)} different options, more than the endpoint takes ({MAX_OPTIONS})"
+            break
+        byid = {o["id"]: o for o in options}
+        t0 = time.time()
+        if dry:
+            r = {"ok": True, "choice": options[0]["id"],
+                 "probabilities": {o["id"]: (1.0 if i == 0 else 0.0) for i, o in enumerate(options)}}
+        else:
+            r = cd.ask_retry(prompt, options, n)
+        if not r.get("ok"):
+            run["summary"]["error"] = f"q{n}: {r.get('error')}"
+            run["steps"].append({"n": n, "minute": mnt, "prompt": prompt, "error": r.get("error")})
+            break
+        pick = byid[r["choice"]]
+        placed.append({"kind": ev["kind"], "rect": pick["rect"]})
+        probs = r.get("probabilities") or {}
+        top = sorted(probs, key=lambda i: -probs[i])[:5]
+        run["steps"].append({
+            "n": n, "minute": mnt, "kind": ev["kind"], "tpl": ev["tpl"], "prompt": prompt, "n_options": len(options),
+            "slots": {o["id"]: rect_world(m, o["rect"], ev["kind"]) for o in options},
+            "top": [{"id": i, "p": probs[i], "text": byid[i]["text"]} for i in top if i in byid],
+            "choice": r["choice"], "text": pick["text"], "p": probs.get(r["choice"]), "rect": list(pick["rect"]),
+            "building": rect_world(m, pick["rect"], ev["kind"]), "ms": r.get("ms") or round((time.time() - t0) * 1000)})
+        run["summary"] = {"buildings": len(placed), "houses": len(placed), "touching_another": None,
+                          "dropped": len(run["dropped"])}
+        save_real(run)
+        if cd.VERBOSE:
+            print(f"q{n:2d} m{mnt:2d} {ev['kind']:13s} {len(options):3d} opts -> p={probs.get(r['choice'])}: {pick['text'][:170]}",
+                  flush=True)
+    run["buildings"] = [s["building"] for s in run["steps"] if s.get("building")]
+    save_real(run)
+    kinds = {}
+    for d in run["dropped"]:
+        kinds[short(d["tpl"])] = kinds.get(short(d["tpl"]), 0) + 1
+    print(f"run {run['id']}: {len(placed)}/{len(events)} buildings, dropped {kinds}"
+          + (f", error: {run['summary']['error']}" if run["summary"].get("error") else ""), flush=True)
+    return run
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--civ", required=True, help="civ code: any civs/<civ>.json in the strategos mod")
@@ -858,19 +1610,23 @@ def main(argv=None) -> int:
     ap.add_argument("--dry", action="store_true", help="no Jev: take the first option (nearest the CC)")
     ap.add_argument("--print", type=int, default=0, help="print the prompt + options of question N (dry houses before it)")
     ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("--variant", choices=["real1", "real2", "pieces"], default="real1",
-                    help="real2: lines say whether they run around or away from the civic centre")
+    ap.add_argument("--variant", default="real1",
+                    help="real1 | real2 (lines say around/away from the civic centre) | pieces | a town variant name")
     ap.add_argument("--goal-text", default=None, help="test a proposed civ line (the civ JSON is not touched)")
     ap.add_argument("--set", action="append", default=[], help="extra VARIANT flag for a variant, e.g. apart_words=1")
     ap.add_argument("--flags", default="", help="comma list of VARIANT flags to switch on")
     ap.add_argument("--timeline", action="store_true",
                     help="real timeline: question k at the minute Petra's k-th house appears, that minute's map")
+    ap.add_argument("--town", action="store_true",
+                    help="every City Planner building Petra queued (city_data/planner_classes.json), asked at the minute "
+                         "she queued it, on that minute's map (source: TOWN_LOG)")
+    ap.add_argument("--until", type=int, default=20, help="--town: last game minute of the source run")
     args = ap.parse_args(argv)
     cd.VERBOSE = args.verbose
     VARIANT.update(name=args.variant, around=args.variant == "real2", pieces=args.variant == "pieces")
     for kv in args.set + [f"{f}=1" for f in args.flags.split(",") if f]:
         k, v = kv.split("=", 1)
-        VARIANT[k] = v not in ("0", "false", "")
+        VARIANT[k] = False if v in ("0", "false", "") else True if v == "1" else v
     if args.print:
         m = Map(load_snapshot(LOG, args.minute))
         goal = args.goal_text or civ_line(args.civ)
@@ -885,7 +1641,9 @@ def main(argv=None) -> int:
             print(f"- {o['id']}: {o['text']}")
         return 0
     for _ in range(args.runs):
-        if args.timeline:
+        if args.town:
+            town_run(args.civ, args.dry, args.until, args.goal_text)
+        elif args.timeline:
             timeline_run(args.civ, args.dry, args.goal_text)
         else:
             one_run(args.civ, args.minute, args.houses, args.dry, args.goal_text)
