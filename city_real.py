@@ -860,7 +860,7 @@ def timeline_run(civ: str, dry: bool, goal_text: str | None = None) -> dict:
 # == round 8+: the town -- every City Planner building Petra queued, on the real timeline ==========
 TOWN_LOG = REPO0AD / ".claude/strategos/runs/solo/20261007-001734/engine.log"
 TPL_DIR = REPO0AD / "binaries/data/mods/public/simulation/templates"
-PLANNER = json.loads((DATA / "planner_classes.json").read_text())
+PLANNER = json.loads((CIVS.parent / "city" / "planner_classes.json").read_text())   # the mod's, shared with the game
 RES_R = {"wood": TREE_R, "food.fruit": TREE_R, "stone": MINE_R, "metal": MINE_R}   # hunt (food.meat) walks away
 MINE_WALL = 5.0      # what a mine itself blocks (units cannot cross it); buildings keep MINE_R clear
 FLUSH = 1.0          # shoulder to shoulder: 1 m apart, still closed to units (v1's block gap)
