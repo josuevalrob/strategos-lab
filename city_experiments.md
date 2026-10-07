@@ -716,3 +716,23 @@ in the map, one asked at a time).
 - Judge (city_game.py; v1 places the same six buildings at the same minutes on this game's map): ways out 1 vs 1,
   width 80 vs 138 m (one back-corner opening each: ring 1 not closed yet), gate sides 0 vs 0, corner/back 1 vs 1,
   street 0 vs 0 (no second ring): relative pass, absolute v1 measures not met by either.
+
+## Ask at queue time, hold only the start, re-ask on a taken spot (2026-10-07)
+
+0AD strategos/v2 e61adf8582: each City Planner plan is asked about when Petra queues it (one at a time); her isGo is
+untouched (she saves for it), only its start waits for the answer; at start the spot is checked (territory,
+building-land navcells, build distance) and a taken spot is re-asked; mines carry their real footprint (13 x 13 on
+this map, not the 6 m square); lab city_real.py reads the new mine entries (267904a).
+
+Live game 20261007-155536 (same setup as 142707):
+- 21 answers (houses, barracks, a defense tower, two temples, two stables); ring-1 gates front 5 m SW .76, left
+  middle .85, right 10 m NW .88, back none 1.0; rings 2 and 3 got their gate questions too.
+- City Planner buildings standing: minute 10: 2 (as 142707), minute 20: 9 (142707: 5); 11 finished by minute 15,
+  2 houses lost in Petra's attack (pop 40/40 at minute 10, 11/90 at minute 20).
+- Re-asks 2, both engine refusals (start check passed): house spots touching a barracks at gap 0.0 / 0.02 m. The
+  engine counts touching footprints as overlapping (Geometry SquareSAT "<= 0"); the asker allows gap 0, and the
+  navcell check misses contact. Cause not fixed yet.
+- Minutes 6-10: wood 450-900 in stock, houses not started: Petra's own account split (phase saving), not the hold.
+- Judge at minute 20 (city_game.py): openings 5 vs 1 X, width 96 vs 138 m, gate sides 2 vs 0, corner/back 2 vs 1 X,
+  street share 1.0 vs 0.0: relative no (v1 has one ring of 9; Jev 3 rings started, rings 2-3 open).
+- Distance spot -> building: median 0.0 m, max 0.1 m.
