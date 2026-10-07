@@ -535,3 +535,26 @@ buildings sit flush to the outer face of 24 m blocks: 14-20 m streets), so any r
 
 Lesson 28: a gap no house fits is a spot-rule problem, not a prompt problem: offer the spot that closes the corner
 before the leftover lands there, and name it in the goal's nouns (rows, corner); Jev takes it (.27-.45).
+
+## Rounds 15-17: the front gate (2026-10-07, P3 now in civs/spart.json)
+
+P3 moved into civs/spart.json (params.city.layout and text[5]; 0AD strategos/v2 5251944944); the lab override
+spart.p3.json is deleted, the lab reads the civ JSON. Stop rule now: relative pass in 3/3 with gate sides
+front + left + right.
+
+Why no front gate (round 14 runs 102350/54/58, all the same): q1 house at the front-left (u -30..-16), q2 barracks
+continues right (u -15..5), q6 house continues (u 6..20) and "closes the front side". At q2 no gate spot exists: a
+barracks one street from the house overlaps a berry bush (11, 40) at minute 0; at q6 every house one street right of
+the barracks overlaps the metal mine. Root: identical option texts were merged to the first spot by (gap, u, v), so
+"a house on the front side: starts the first ring, a street (10 m) between it and the civic centre" was always the
+leftmost spot (a diagonal off the CC corner) - code, not Jev, chose where the front row starts.
+
+| round | variant | change | runs | relative | gate sides | notes |
+|---|---|---|---|---|---|---|
+| 15 | town13 | gate fact as soon as a spot leaves a street-wide gap to its ring neighbour (gate_early) + "a second gate" when that side of the ring has one (gate_count) | 105342, 105344, 105346 | 1/3 | 1, 3, 2 | 105344: 8 openings, corner/back 4 |
+| 16 | town14 | position along the side ("facing the left half of the civic centre's front", "past the left end of ...", "facing the middle of ..."): same-text merging no longer picks the start | 105638, 105640, 105642 | 2/3 | 2, 0, 2 | q1 now the CC-aligned spot (u -15..-1); front gate in 2/3, left gate lost (row wraps the corner) |
+| 16b | town14 + gate_early, gate_count | | 105842, 105844, 105846 | 2/3 | 2, 2, 3 | back gate at q9 (.16); gate decisions are ties (q5 .28/.28, q6 .28/.26) |
+| 17 | + gate_tally (state per ring: "Gates so far: none on the front side, one on the left flank, ..." for all four sides) + gate_first ("leaves a first gate ...") | 110227, 110229, 110231 | 2/3 | 1, 2, 3 | probe (2 asks) P(gate on that side): left .50 -> .47, front .28 -> .49, back .31 -> .21; 110231 meets every relative measure with front + left + right |
+
+Lesson 29: a tie-break between identical texts is a choice; make the texts differ by a true fact (position along
+the side) so Jev makes it. It moved the town's start and made front gates possible.

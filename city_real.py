@@ -1955,6 +1955,32 @@ class TownBuilder12(TownBuilder9):
         out.sort(key=lambda r: (Map.gap(r, self.cc_rect), r))
         return out
 
+    def along(self, r) -> str:
+        """Where along its side a spot faces the civic centre: its middle, one half, or past one end."""
+        fw = self.face_word(r)
+        if fw not in SIDES4:
+            return ""
+        o = 0 if fw in ("front side", "back side") else 1
+        t, half = r[o], self.cc_rect[2 + o]
+        d = ("right" if t > 0 else "left") if o == 0 else ("front" if t > 0 else "back")
+        face = fw.replace(" side", "")
+        if abs(t) <= 4:
+            return f"facing the middle of the civic centre's {face}"
+        if abs(t) <= half:
+            return f"facing the {d} half of the civic centre's {face}"
+        return f"past the {d} end of the civic centre's {face}"
+
+    def option_text(self, r) -> str:
+        if not VARIANT.get("along"):
+            return super().option_text(r)
+        fw = self.face_word(r)
+        parts = [self.main_clause(r)]
+        for extra in (self.side_fact(r), self.opening_fact(r)):
+            if extra:
+                parts.append(extra)
+        where = f"at the {fw} of the civic centre" if "corner" in fw else f"on the {fw} of the civic centre, {self.along(r)}"
+        return f"a {self.new['kind']} {where}: " + "; ".join(parts)
+
     def side_fact(self, r) -> str:
         bands = self.bands(self.placed)
         if not bands:
@@ -1983,7 +2009,27 @@ class TownBuilder12(TownBuilder9):
                 p = min(band[2], key=lambda q: Map.gap(r, q["rect"]))
                 side = self.face_word(((r[0] + p["rect"][0]) / 2, (r[1] + p["rect"][1]) / 2, 0, 0))
                 parts.append(f"leaves a gate one street wide ({g}) {'at' if 'corner' in side else 'on'} the {side} {ring}")
+        if VARIANT.get("gate_count"):          # the same words for every side: how many gates that side then has
+            for i, x in enumerate(parts):
+                if x.startswith("leaves a gate one street wide (") and " on the " in x:
+                    side = x.split(" on the ")[1].replace(f" {ring}", "")
+                    n = self.gate_gaps(band, r, side)
+                    if n >= 2 or VARIANT.get("gate_first"):
+                        parts[i] = x.replace("leaves a gate", f"leaves a {ORD[max(n, 1)]} gate" if n < len(ORD) else "leaves another gate")
         return "; ".join(parts[:2])
+
+    def gate_gaps(self, band, r, side) -> int:
+        """Street-wide gaps (8-31 m) between buildings of this ring on that side, once r stands."""
+        rects = [m["rect"] for m in band[2]] + ([r] if r is not None else [])
+        ax = 1 if side in ("front side", "back side") else 0      # the side's row runs across the other axis
+        o, sg = 1 - ax, (1 if side in ("front side", "right flank") else -1)
+        row = sorted((q for q in rects if self.face_word(q) == side), key=lambda q: q[o])
+        n = 0
+        for a, b in zip(row, row[1:]):
+            g = (b[o] - b[2 + o]) - (a[o] + a[2 + o])
+            if 8 <= g <= 31 and overlap(a, b, ax) > 0:
+                n += 1
+        return n
 
     def state(self) -> str:
         w, ps = self.w, self.placed
@@ -2006,16 +2052,21 @@ class TownBuilder12(TownBuilder9):
             closed = [f"the {s}" for s in SIDES4 if s not in so] + [f"the corner {self.corner_words(c)}" for c in allc if c not in co]
             opened = [f"the {s}" for s in SIDES4 if s in so and not self.gate_left(band, runs, s)] + \
                      [f"the corner {self.corner_words(c)}" for c in allc if c in co]
-            lines.append(f"The {ORD[k]} ring ({street}): {num(len(mem))} building{'s' if len(mem) > 1 else ''}. "
+            tally = ""
+            if VARIANT.get("gate_tally"):      # every side, the same words: how many gates it has so far
+                cnt = {sd: self.gate_gaps(band, None, sd) for sd in SIDES4}
+                tally = "Gates so far: " + ", ".join(
+                    f"{['none', 'one', 'two', 'three', 'four'][min(cnt[sd], 4)]} on the {sd}" for sd in SIDES4) + ". "
+            lines.append(f"The {ORD[k]} ring ({street}): {num(len(mem))} building{'s' if len(mem) > 1 else ''}. " + tally
                          + (f"Closed: {', '.join(closed)}. " if closed else "")
-                         + (f"Gates: {', '.join(gates)}. " if gates else "")
+                         + (f"Gates: {', '.join(gates)}. " if gates and not tally else "")
                          + (f"Still open: {', '.join(opened)}." if opened else ""))
         return "\n".join(lines)
 
 
 TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4,
                  "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8, "town9": TownBuilder9, "town10": TownBuilder9,
-                 "town11": TownBuilder9, "town12": TownBuilder12}
+                 "town11": TownBuilder9, "town12": TownBuilder12, "town13": TownBuilder12, "town14": TownBuilder12}
 
 
 TOWN_TEMPLATE = """Role: City planner.
