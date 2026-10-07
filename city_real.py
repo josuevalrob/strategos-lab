@@ -1668,6 +1668,8 @@ class TownBuilder7(TownBuilder6):
             wide = sum(len(o) + 1 for o in self.openings(bands[k - 1]) if len(o) + 1 > 14)
             return out + (f", while the {ORD[k]} ring is still open ({metres(wide)} of it unbuilt)" if wide else "")
         if rel == "inside":
+            if k == 1 and VARIANT.get("inside_plain"):     # no ring words: it is in no ring
+                return f"in no ring, {cc}"
             return f"between the civic centre and the first ring, {cc}" if k == 1 else \
                 f"between the {ORD[k - 1]} and the {ORD[k]} ring, {inner}"
         mem = bands[k - 1][2]
@@ -1765,6 +1767,14 @@ class TownBuilder8(TownBuilder7):
         if after is not None and not after:
             return "closes the city all around: no way out left"
         before = [w for w in (wb or []) if w[0] is not None]
+        shut = VARIANT.get("close_way")
+        if VARIANT.get("close_way_off_ring"):   # only a spot in no ring (inside a ring's street or between rings)
+            bands = self.bands(self.placed)
+            shut = bool(bands) and self.where_rings(r, bands)[1] != "in"
+        if shut:                            # a street-wide or wider way out that this spot shuts (any side)
+            for w, a in sorted(before, key=lambda x: -x[0]):
+                if w >= 8 and not any(v is not None and abs((a - b + 180) % 360 - 180) <= 25 for v, b in after or []):
+                    return f"closes the {metres(w)} way out {self.way_where(a)}"
         for w, a in after or []:
             if w is not None and w < 8 and not any(abs((a - b + 180) % 360 - 180) <= 25 and v < 8 for v, b in before):
                 return f"opens a way out of {metres(w)} {self.way_where(a)}, narrower than a street"
@@ -1963,6 +1973,9 @@ class TownBuilder12(TownBuilder9):
         o = 0 if fw in ("front side", "back side") else 1
         t, half = r[o], self.cc_rect[2 + o]
         d = ("right" if t > 0 else "left") if o == 0 else ("front" if t > 0 else "back")
+        if VARIANT.get("along_compass"):    # the direction by compass: no goal noun (front, flank) in it
+            e = self.m.eu if o == 0 else self.m.ev
+            d = compass(e[0] * (1 if t > 0 else -1), e[1] * (1 if t > 0 else -1))
         face = fw.replace(" side", "")
         if abs(t) <= 4:
             return f"facing the middle of the civic centre's {face}"
@@ -1996,7 +2009,8 @@ class TownBuilder12(TownBuilder9):
         sa, ca = self.side_state(band, after)
         ring = f"of the {ORD[k]} ring"
         parts = [f"closes the corner {ring} {self.corner_words(c)}" for c in sorted(cb - ca)]
-        parts += [f"closes the {s} {ring}" for s in SIDES4 if s in sb and s not in sa]
+        if not VARIANT.get("no_side_close"):
+            parts += [f"closes the {s} {ring}" for s in SIDES4 if s in sb and s not in sa]
         fw = self.face_word(r)
         if fw in SIDES4 and fw in sa:
             g = self.gate_left(band, after, fw)

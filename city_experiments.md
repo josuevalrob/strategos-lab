@@ -558,3 +558,32 @@ leftmost spot (a diagonal off the CC corner) - code, not Jev, chose where the fr
 
 Lesson 29: a tie-break between identical texts is a choice; make the texts differ by a true fact (position along
 the side) so Jev makes it. It moved the town's start and made front gates possible.
+
+## Rounds 18-20: gate pulls, and the stop (2026-10-07)
+
+| round | change (town14, cumulative) | runs | relative (gate sides >= v1's 2) | gate sides | with front + left + right |
+|---|---|---|---|---|---|
+| 18 | position along a side by compass ("facing the north-east half of the civic centre's front"): the round-16 words put goal nouns on flank spots ("facing the front half of the civic centre's right flank") | 110626, 110628, 110630 | 3/3 | 2, 2, 2 | 0/3 |
+| 19 | + no "closes the left flank of the first ring" (its "closes" echoes P3's "... are closed") | 111031, 111033, 111035 | 2/3 | 2, 2, 3 | 0/3 (111035: 9 ways out, corner/back 4) |
+| 20 | + a spot inside the first ring's street says "in no ring, built against the civic centre" (not "between the civic centre and the first ring") | 111321, 111323, 111325 | 1/3 | 2, 0, 3 | 0/3 |
+
+Probes (2 asks, P of options that leave a gate on that side; 105842 q5 left / q6 front / q9 back, 110630 q6 front):
+round 17 .45 / .56 / .23 / .27; compass .48 / .57 / .22; + no side-close .55 / .56 / .23 / .26; "closes the 24 m way out
+on the right flank" on every spot: left .20 (other options' words moved the whole distribution; the two q5 texts
+compared were identical); the same only on spots in no ring: left .21, intruder still first (.18); "in no ring"
+wording: intruder .10 -> .06 at 110227 q14.
+
+Where the right-flank gate is lost (110227 q14, 111031 q16): the same spot, a house flush against the civic
+centre's right face, "between the civic centre and the first ring, built against the civic centre", picked at
+.10-.19 among flat answers, seals the gap at the stone mine from inside. Where the front gate is lost: 110630 q6
+(continuing .48 vs gate .27) and 110628 q15 (a temple between the rings right in front of the gate, .06).
+
+Stop: 6 rounds (15-20). Best: 110231 (round 17) meets every relative measure with front + left + right; no 3-run
+group does. Round 18 passes the round-14 criterion (gate sides >= v1's 2) in 3/3.
+
+Lessons (rounds 18-20):
+30. Any goal noun in a position word is a pull ("the front half of ... right flank"); compass words are neutral.
+31. A fact that a spot closes something pulls toward it when the goal says "the city is the wall", whatever is
+    closed (a way out, a gate).
+32. Gate decisions sit near .5 at best; three of them plus "no later building in the gate" in every run is
+    (.5)^3 per run on this design - wording moves each by .05-.3, not to .9.
