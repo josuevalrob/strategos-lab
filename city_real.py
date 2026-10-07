@@ -16,10 +16,12 @@ Runs land in static/city/runs/<id>.json (mode "real"), shown by /static/city.htm
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
 import math
 import sys
 import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -1073,17 +1075,18 @@ class TownBuilder:
         sw = VARIANT.get("street_words", "plain")
         if g <= 1.5:
             return {"plain": f"touches {what}", "conseq": f"against {what}, with no street between them",
-                    "wall": f"built against {what}"}[sw]
+                    "wall": f"built against {what}", "goal": f"built against {what}"}[sw]
         if g < 8:
             return {"plain": f"{metres(g)} from {what}, narrower than a street",
                     "conseq": f"{metres(g)} from {what}: too narrow for a street",
-                    "wall": f"{metres(g)} from {what}, a narrow lane"}[sw]
+                    "wall": f"{metres(g)} from {what}, a narrow lane", "goal": f"{metres(g)} from {what}, a narrow lane"}[sw]
         if g <= 12:
             return {"plain": f"one street ({metres(g)}) from {what}", "conseq": f"one street ({metres(g)}) from {what}",
-                    "wall": f"a street ({metres(g)}) between it and {what}"}[sw]
+                    "wall": f"a street ({metres(g)}) between it and {what}",
+                    "goal": f"a street about 10 m wide between it and {what}"}[sw]
         return {"plain": f"{metres(g)} from {what}, more than one street",
                 "conseq": f"{metres(g)} from {what}: wider than one street",
-                "wall": f"{metres(g)} from {what}, more than a street"}[sw]
+                "wall": f"{metres(g)} from {what}, more than a street", "goal": f"{metres(g)} from {what}, more than a street"}[sw]
 
     def ring_fact(self, r) -> str:
         """Which ring r would be in (counted from the civic centre over the City Planner's buildings) and the
@@ -1421,7 +1424,7 @@ class TownBuilder4(TownBuilder3):
         if side_by:
             return f"shoulder to shoulder with {kind_list(side_by)} of the {ORD[k]} ring"
         g = min(Map.gap(r, p["rect"]) for p in self.placed)
-        if g <= TOL:
+        if g <= TOL or (VARIANT.get("street_not_apart") and 8 <= g <= 12):
             return ""
         return f"stands apart, {metres(g)} from the nearest building of the city"
 
@@ -1482,7 +1485,272 @@ class TownBuilder4(TownBuilder3):
         return "\n".join(lines)
 
 
-TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4}
+WAY_G = 0.5          # town6: a building's wall, grown 0.5 m on 1 m cells (centres): 1 m gaps closed, 2 m a way out
+MAX_WAYS = 6
+
+
+class TownBuilder6(TownBuilder4):
+    """town6: openings = the ways out of the city from the civic centre between ALL City Planner buildings (any ring),
+    so a building that closes a gap from outside a ring counts too; the state lists them, each option says the ways
+    out it leaves.  Ring words (square distance) as town4."""
+
+    def ways_out(self, rects):
+        """[(width m, angle deg in the CC frame: 0 right flank, 90 front)] or None (no wall yet); a last entry
+        (None, None) when more ways out remain than MAX_WAYS."""
+        if not rects:
+            return None
+        c = self.cc_rect
+        half = int(max(max(abs(r[0]) + r[2], abs(r[1]) + r[3]) for r in rects)) + 12
+        n = 2 * half + 1
+        wall = bytearray(n * n)
+
+        def paint(r, g):
+            u0, u1 = max(0, math.ceil(r[0] - r[2] - g - 0.5) + half), min(n - 1, math.floor(r[0] + r[2] + g - 0.5) + half)
+            v0, v1 = max(0, math.ceil(r[1] - r[3] - g - 0.5) + half), min(n - 1, math.floor(r[1] + r[3] + g - 0.5) + half)
+            for i in range(u0, u1 + 1):
+                wall[i * n + v0: i * n + v1 + 1] = b"\x01" * (v1 - v0 + 1)
+        for r in rects:
+            paint(r, WAY_G)
+        big = 1 << 30
+        clear = [0 if wall[i] else big for i in range(n * n)]
+        dq = deque(i for i in range(n * n) if wall[i])
+        while dq:
+            i = dq.popleft()
+            a, b = divmod(i, n)
+            for j in (i + n if a + 1 < n else -1, i - n if a else -1, i + 1 if b + 1 < n else -1, i - 1 if b else -1):
+                if j >= 0 and clear[j] > clear[i] + 1:
+                    clear[j] = clear[i] + 1
+                    dq.append(j)
+        paint(c, 0.0)
+        hu, hv = int(c[2]) + 2, int(c[3]) + 2
+        starts = {(a + half) * n + (b + half) for a in range(-hu, hu + 1) for b in (-hv, hv)} | \
+                 {(a + half) * n + (b + half) for a in (-hu, hu) for b in range(-hv, hv + 1)}
+        ways = []
+        for _ in range(MAX_WAYS):
+            best, prev, heap = {}, {}, []
+            for i in starts:
+                if not wall[i]:
+                    best[i], prev[i] = clear[i], -1
+                    heapq.heappush(heap, (-clear[i], i))
+            out = None
+            while heap:
+                nb, i = heapq.heappop(heap)
+                if -nb < best.get(i, -1):
+                    continue
+                a, b = divmod(i, n)
+                if a in (0, n - 1) or b in (0, n - 1):
+                    out = i
+                    break
+                for j in (i + n if a + 1 < n else -1, i - n if a else -1, i + 1 if b + 1 < n else -1, i - 1 if b else -1):
+                    if j >= 0 and not wall[j]:
+                        bj = min(-nb, clear[j])
+                        if bj > best.get(j, -1):
+                            best[j], prev[j] = bj, i
+                            heapq.heappush(heap, (-bj, j))
+            if out is None:
+                return ways
+            bott, path, i = best[out], [], out
+            while i != -1:
+                path.append(i)
+                i = prev[i]
+            g = next(i for i in reversed(path) if clear[i] == bott)
+            ga, gb = divmod(g, n)
+            ways.append((2 * bott, math.degrees(math.atan2(gb - half, ga - half)) % 360))
+            rad = bott + 1
+            for a in range(max(0, ga - rad), min(n, ga + rad + 1)):
+                wall[a * n + max(0, gb - rad): a * n + min(n, gb + rad + 1)] = b"\x01" * (min(n, gb + rad + 1) - max(0, gb - rad))
+        ways.append((None, None))
+        return ways
+
+    def way_where(self, ang) -> str:
+        for k in (45, 135, 225, 315):
+            if abs((ang - k + 180) % 360 - 180) <= 15:
+                rad = math.radians(k)
+                return f"at the {self.corner_name(math.cos(rad), math.sin(rad))}"
+        side = min(((0, "right flank"), (90, "front side"), (180, "left flank"), (270, "back side")),
+                   key=lambda s: abs((ang - s[0] + 180) % 360 - 180))[1]
+        return f"on the {side}"
+
+    def way_words(self, ways) -> str:
+        parts = []
+        for wdt, ang in sorted(ways, key=lambda w: -(w[0] or 1e9)):
+            if wdt is None:
+                parts.append("more ways out on other sides")
+            elif 8 <= wdt <= 14:
+                parts.append(f"a gate one street wide ({metres(wdt)}) {self.way_where(ang)}")
+            elif wdt < 8:
+                parts.append(f"{metres(wdt)} {self.way_where(ang)}, narrower than a street")
+            else:
+                parts.append(f"{metres(wdt)} {self.way_where(ang)}")
+        return ", ".join(parts)
+
+    def _ways_before(self):
+        if not hasattr(self, "_wb"):
+            self._wb = self.ways_out([p["rect"] for p in self.placed])
+        return self._wb
+
+    def opening_fact(self, r) -> str:
+        if not self.placed or min(Map.gap(r, p["rect"]) for p in self.placed) > 14:
+            return ""
+        before, after = self._ways_before(), self.ways_out([p["rect"] for p in self.placed] + [r])
+        if after == before:
+            return ""
+        if not after:
+            return "closes the city all around: no way out left"
+        return "leaves the city with these ways out: " + self.way_words(after)
+
+    def ring_fact(self, r) -> str:
+        return TownBuilder3.ring_fact(self, r)
+
+    def state(self) -> str:
+        w, ps = self.w, self.placed
+        lines = [f"Our civic centre: its front faces {w.face['front']}, its flanks face {w.face['left flank']} "
+                 f"and {w.face['right flank']}, its back faces {w.face['back']}."]
+        if not ps:
+            lines.append("Buildings of the city so far: none yet.")
+            return "\n".join(lines)
+        lines.append(f"Buildings of the city so far: {num(len(ps))}: {kind_list([p['kind'] for p in ps])}.")
+        bands = self.bands(ps)
+        for k, (a, b, mem) in enumerate(bands, 1):
+            if k == 1:
+                street = self.gap_words(a, "the civic centre")
+            else:
+                gs = sorted(self.street_to(p["rect"], bands[k - 2][2]) for p in mem)
+                street = self.gap_words(gs[len(gs) // 2], f"the {ORD[k - 1]} ring")
+            sides = []
+            for p in mem:
+                f = self.face_word(p["rect"])
+                if f not in sides:
+                    sides.append(f)
+            lines.append(f"The {ORD[k]} ring ({street}): {num(len(mem))} building{'s' if len(mem) > 1 else ''}, "
+                         f"on the {', the '.join(sides)}.")
+        ways = self._ways_before()
+        lines.append("Ways out of the city: " + (self.way_words(ways) + "." if ways else "none: it is closed all around."))
+        return "\n".join(lines)
+
+
+class TownBuilder7(TownBuilder6):
+    """town7: one main clause per option = ring relation + shoulder to shoulder + street, composed (lesson 16); the
+    way straight out of the middle of each civic centre face (a street wide) when a spot stands in it; what the spot
+    changes in the city's ways out (closes / narrows / opens), not the whole list."""
+
+    def main_clause(self, r) -> str:
+        bands = self.bands(self.placed)
+        cc = self.gap_words(self.din(r), "the civic centre")
+        if not bands:
+            return f"starts the first ring, {cc}"
+        k, rel = self.where_rings(r, bands)
+        inner = cc if k == 1 else self.gap_words(self.street_to(r, bands[k - 2][2]), f"the {ORD[k - 1]} ring")
+        if rel == "outside":
+            out = f"starts the {ORD[k + 1]} ring, {self.gap_words(self.street_to(r, bands[k - 1][2]), 'the ' + ORD[k] + ' ring')}"
+            wide = sum(len(o) + 1 for o in self.openings(bands[k - 1]) if len(o) + 1 > 14)
+            return out + (f", while the {ORD[k]} ring is still open ({metres(wide)} of it unbuilt)" if wide else "")
+        if rel == "inside":
+            return f"between the civic centre and the first ring, {cc}" if k == 1 else \
+                f"between the {ORD[k - 1]} and the {ORD[k]} ring, {inner}"
+        mem = bands[k - 1][2]
+        nbs = [(p, ax) for p in mem for ax in (0, 1) if inline(r, p["rect"], ax)]
+        if nbs:
+            sides = {(ax, 1 if r[ax] > p["rect"][ax] else -1) for p, ax in nbs}
+            kinds = kind_list([p["kind"] for p, _ in nbs])
+            if any((ax, -sg) in sides for ax, sg in sides):
+                return f"closes a gap in the {ORD[k]} ring, shoulder to shoulder with {kinds}, {inner}"
+            ax, sg = sorted(sides)[0]
+            return f"continues the {ORD[k]} ring toward the {TOWARD[(ax, sg)]}, shoulder to shoulder with {kinds}, {inner}"
+        p = min(mem, key=lambda q: Map.gap(r, q["rect"]))
+        g = Map.gap(r, p["rect"])
+        facing = any(overlap(r, p["rect"], 1 - ax) > 0.6 * min(2 * r[3 - ax], 2 * p["rect"][3 - ax]) for ax in (0, 1))
+        if facing and 8 <= g <= 14:
+            return f"in the {ORD[k]} ring, {inner}, leaving a gate one street wide ({metres(g)}) between it and the {p['kind']}"
+        return f"in the {ORD[k]} ring, {inner}, {metres(g)} from its nearest building"
+
+    def gate_street(self, r) -> str:
+        c, half = self.cc_rect, STREET / 2
+        for ax in (0, 1):
+            o = 1 - ax
+            if abs(r[o]) < r[2 + o] + half and abs(r[ax]) - r[2 + ax] > c[2 + ax] - 0.5:
+                face = TOWARD[(ax, 1 if r[ax] > 0 else -1)]
+                if VARIANT.get("gate_middle"):
+                    return f"blocks the middle of the {face}{'' if 'flank' in face else ' side'}"
+                return f"blocks the way straight out of the middle of the civic centre's {face}"
+        return ""
+
+    def opening_fact(self, r) -> str:
+        if not self.placed or min(Map.gap(r, p["rect"]) for p in self.placed) > 14:
+            return ""
+        wb = self._ways_before()
+        if wb is not None and not wb:
+            return ""                                   # already closed all around
+        before = [w for w in (wb or []) if w[0] is not None]
+        after = self.ways_out([p["rect"] for p in self.placed] + [r])
+        if after is not None and not after:
+            return "closes the city all around: no way out left"
+        after = [w for w in (after or []) if w[0] is not None]
+
+        def near(a, b):
+            return abs((a - b + 180) % 360 - 180) <= 25
+        parts = []
+        for w, a in sorted(before, key=lambda x: x[0]):
+            m = [x for x in after if near(x[1], a)]
+            if not m:
+                parts.append(f"closes the {metres(w)} way out {self.way_where(a)}")
+            elif max(x[0] for x in m) <= w - 2:
+                nw = max(x[0] for x in m)
+                parts.append(f"narrows the way out {self.way_where(a)} from {metres(w)} to " +
+                             (f"a gate one street wide ({metres(nw)})" if 8 <= nw <= 14 else
+                              f"{metres(nw)}, narrower than a street" if nw < 8 else metres(nw)))
+        for w, a in after:
+            if not any(near(a, b) for _, b in before):
+                parts.append(f"opens a way out of {metres(w)} {self.way_where(a)}" + (", narrower than a street" if w < 8 else ""))
+        return "; ".join(parts[:2])
+
+    def option_text(self, r) -> str:
+        fw = self.face_word(r)
+        parts = [self.main_clause(r)]
+        for extra in (self.gate_street(r), self.opening_fact(r)):
+            if extra:
+                parts.append(extra)
+        where = f"at the {fw} of the civic centre" if "corner" in fw else f"on the {fw} of the civic centre"
+        return f"a {self.new['kind']} {where}: " + "; ".join(parts)
+
+
+class TownBuilder8(TownBuilder7):
+    """town8: town7 without the middle-of-face fact (a goal phrase in it pulls toward blocking: round 10); a gate is
+    named only where a spot leaves one (a street-wide gap to a building of its ring, with its side); way-out facts
+    only for the two consequences that end a gate or open a slit."""
+
+    def main_clause(self, r) -> str:
+        out = super().main_clause(r)
+        if ", leaving a gate one street wide (" in out:
+            bands = self.bands(self.placed)
+            k, _ = self.where_rings(r, bands)
+            p = min(bands[k - 1][2], key=lambda q: Map.gap(r, q["rect"]))
+            mid = ((r[0] + p["rect"][0]) / 2, (r[1] + p["rect"][1]) / 2, 0, 0)
+            fw = self.face_word(mid)
+            out = out.replace(") between it and the", f") {'at' if 'corner' in fw else 'on'} the {fw} between it and the")
+        return out
+
+    def gate_street(self, r) -> str:
+        return ""
+
+    def opening_fact(self, r) -> str:
+        if not self.placed or min(Map.gap(r, p["rect"]) for p in self.placed) > 14:
+            return ""
+        wb = self._ways_before()
+        if wb is not None and not wb:
+            return ""
+        after = self.ways_out([p["rect"] for p in self.placed] + [r])
+        if after is not None and not after:
+            return "closes the city all around: no way out left"
+        before = [w for w in (wb or []) if w[0] is not None]
+        for w, a in after or []:
+            if w is not None and w < 8 and not any(abs((a - b + 180) % 360 - 180) <= 25 and v < 8 for v, b in before):
+                return f"opens a way out of {metres(w)} {self.way_where(a)}, narrower than a street"
+        return ""
+
+
+TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4,
+                 "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8}
 
 
 TOWN_TEMPLATE = """Role: City planner.

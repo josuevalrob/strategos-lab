@@ -411,3 +411,46 @@ Lessons (round 8):
     geometry (town5: ring 1 one street out, ring 2 one street outside it).
 21. Feasibility first: at minute 20 even v1's own rules leave corner/back openings on this map (mines, trees, 30
     buildings); a pass needs the ring routed around the metal mine.
+
+## Round 9: ways out of the city; the build order in a proposed line (2026-10-07)
+
+Judge fixes (city_judge.py, town only):
+- Closure = ways out of the city between ALL City Planner buildings (a detour from outside a ring counts); ring 0
+  alone is reported, not checked. Still no fields, anchors or mines as walls.
+- Cells painted by their centre: the old integer painting closed gaps up to 4 m and reported widths 3 m short (a 10 m
+  gap read 7 m; test with a square of walls). Now 1 m gaps close, 1.5 m+ is a way out, widths true to ~1 m.
+- A band of fewer than 3 buildings inside the next one is strays, not ring 0 (a tower against the CC had become
+  "ring 0" and shifted every ring).
+
+| variant | change | runs | judge (Jev) |
+|---|---|---|---|
+| town6 | openings = ways out of the city (flood over all Jev buildings, per option, ~0.01 s each); option lists the ways out it leaves | 093901 | 2 openings (26 m right flank, 2 m back), street 1/11 |
+| town5 / town6 + P0 | P0 = verbatim + "Close each ring before the next one starts." | 094041, 094043, 094045 / 094048, 094050, 094052 | town5: 3/3/1 openings, street 10/15, 11/16, 0/13; town6: 6/1/2 openings |
+| town7 | one composed clause ("continues the first ring toward the back, shoulder to shoulder with a house, a street (10 m) between it and the civic centre"); "blocks the way straight out of the middle of the civic centre's front"; only what a spot changes in the ways out | 3 runs (094933...) | 0/1/1 openings, no gate anywhere, street 0/4, 0/4, 2/7; q1 "built against" .25 vs "a street" .18 |
+| town5 / town7 + P1 | P1 = rings a street apart, shoulder to shoulder, each ring closed before the next, one gate one street wide on front, left, right | 095016-095031 | town5: 2/2/3 openings, street 6/8, 7/8, 0/3; town7: 2/4/5 |
+
+Probe (6 decisive steps x 2 asks, P of options with an 8-12 m inner street): "wall" .30, + no "stands apart" for a
+street gap .29, exact goal phrase "a street about 10 m wide between it and" .29. Wording of the street fact is not
+the lever once rings exist; shoulder to shoulder + "continues the ring" win.
+
+## Round 10: gates (2026-10-07)
+
+| variant | change | runs | judge (Jev) |
+|---|---|---|---|
+| town7 + P2, gate_middle | P2 = P1 with "a gate one street wide in the middle of the front side, of the left flank and of the right flank; the back side and the corners stay closed"; fact "blocks the middle of the front side" | 095553, 095555, 095557 | 2/2/1 openings, never a gate on front/left/right; street 2/5, 2/3, 6/6 |
+| town8 | no middle fact; a gate is named only where a spot leaves one ("leaving a gate one street wide (10 m) on the left flank between it and the house"); way-out facts only "closes the city all around" and a new slit | verbatim 3 runs (100255...), P1 3 runs | verbatim: 3/3/3 openings (left-flank corner 6-8 m, back 6 m, right flank 4-28 m), street 6/7, 6/9, 1/3; P1: 3/3/4, street 6/13, 4/5, 0/5 |
+
+Gate width range in checks.json set to v1's own geometry: a 10 m street widened by a leftover shorter than the
+largest building + gap (21 m): 8-31 m (was 6-24).
+
+In 24 runs since round 8 Jev never left a gate on the front or the left flank; the right flank stays open at the
+stone mine (12-28 m), the corners at the metal mine and where rows meet.
+
+Lessons (rounds 9-10):
+22. Jev matches phrases, not verbs: "blocks the middle of the front side" (with P2 naming "the middle of the front
+    side") was picked .49 vs .21 for the same spot without it. A goal phrase in a negative fact is a pull (13 again).
+23. A gate is an absence. Naming it where a spot leaves one ("leaving a gate one street wide") pulls toward gates on
+    any side, the back too (q9 .19 vs continuing the ring .19); not naming it, Jev closes every side it builds.
+24. The build order in the goal (P0, P1) does not stop ring 2 from starting while ring 1 is open: the open part of
+    ring 1 is where the mines are, with no possible spot left in ring 1 there.
+25. Measure the measure: a 1 m raster that paints touched cells closes 4 m gaps and reads a 10 m gate as 7 m.

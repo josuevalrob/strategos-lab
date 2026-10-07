@@ -76,15 +76,20 @@ def flood_gates(b, ps) -> dict:
     return flood(b.cc_rect, ps, R.TOL / 2, HALF, b.m.house_w)
 
 
-def flood(cc, ps, grow, HALF, house_w=14) -> dict:
-    """Ways out from the civic centre between the pieces `ps` (each grown by `grow` m, so gaps up to 2 x grow are
-    closed), on 1 m cells |u|, |v| <= HALF; each way out's narrowest point is a gate, walled off before the next."""
+def flood(cc, ps, grow, HALF, house_w=14, centre=False) -> dict:
+    """Ways out from the civic centre between the pieces `ps` (each grown by `grow` m), on 1 m cells |u|, |v| <= HALF;
+    each way out's narrowest point is a gate, walled off before the next.  centre=True paints a cell when its centre
+    is inside the grown piece (gaps up to 2 x grow closed, widths true to the metre); else whole cells it touches."""
     n = 2 * HALF + 1
     wall = bytearray(n * n)
 
     def paint(buf, r, g):
-        u0, u1 = int(math.floor(r[0] - r[2] - g)) + HALF, int(math.ceil(r[0] + r[2] + g)) + HALF
-        v0, v1 = int(math.floor(r[1] - r[3] - g)) + HALF, int(math.ceil(r[1] + r[3] + g)) + HALF
+        if centre:
+            u0, u1 = int(math.ceil(r[0] - r[2] - g - 0.5)) + HALF, int(math.floor(r[0] + r[2] + g - 0.5)) + HALF
+            v0, v1 = int(math.ceil(r[1] - r[3] - g - 0.5)) + HALF, int(math.floor(r[1] + r[3] + g - 0.5)) + HALF
+        else:
+            u0, u1 = int(math.floor(r[0] - r[2] - g)) + HALF, int(math.ceil(r[0] + r[2] + g)) + HALF
+            v0, v1 = int(math.floor(r[1] - r[3] - g)) + HALF, int(math.ceil(r[1] + r[3] + g)) + HALF
         for i in range(max(0, u0), min(n, u1 + 1)):
             buf[i * n + max(0, v0): i * n + min(n, v1 + 1)] = b"\x01" * (min(n, v1 + 1) - max(0, v0))
     for p in ps:
@@ -140,7 +145,7 @@ def flood(cc, ps, grow, HALF, house_w=14) -> dict:
         ang = math.degrees(math.atan2(gj - HALF, gi - HALF)) % 360
         cell = (gi - HALF, gj - HALF, 0.5, 0.5)
         two = sorted(ps, key=lambda p: R.Map.gap(cell, p["rect"]))[:2]
-        width = 2 * bott - 1 + round(2 * grow)
+        width = 2 * bott - 1 + (round(2 * grow) if not centre else 1)
         gates.append({"at": round(ang), "width": width, "between": [p["kind"] for p in two],
                       "petra_slit": all(p["kind"] != "house" for p in two) and width < house_w,
                       "slit": width < SLIT_M,
@@ -197,7 +202,7 @@ def judge(run) -> dict:
 
 
 # == round 8+: the town against v1's measures (city_v1.py draws v1's own town on the same timeline) ===========
-WALL_GROW = 1.0     # town: gaps up to 2 m are closed to units (v1's blocks stand 1 m apart)
+WALL_GROW = 0.5     # town: pieces grown 0.5 m (cell centres): v1's 1 m block gaps are closed, 2 m is a way out
 
 
 def rings_of(cc, ps) -> list:
@@ -209,6 +214,11 @@ def rings_of(cc, ps) -> list:
     while left:
         first = min(left, key=lambda i: din[i])
         band = [i for i in left if din[i] < dout[first] - 1]
+        if len(band) < 3 and len(band) < len(left):       # a stray or two inside the next ring: not a ring
+            band = [first]
+            ring[first] = -1
+            left -= {first}
+            continue
         for i in band:
             ring[i] = k
         left -= set(band)
@@ -226,14 +236,18 @@ def measure_town(cc, ps, want) -> dict:
     """v1's measures on a town (ring pieces = City Planner buildings only; Petra's buildings, fields too, never)."""
     ring = rings_of(cc, ps)
     r0 = [p for p, k in zip(ps, ring) if k == 0]
-    half = int(max([abs(p["rect"][0]) + p["rect"][2] for p in r0] + [abs(p["rect"][1]) + p["rect"][3] for p in r0] + [45])) + 15
-    fl = flood(cc, r0, WALL_GROW, half)
+
+    def ext(pp):
+        return int(max([abs(p["rect"][0]) + p["rect"][2] for p in pp] + [abs(p["rect"][1]) + p["rect"][3] for p in pp] + [45])) + 15
+    fl = flood(cc, ps, WALL_GROW, ext(ps), centre=True)      # the city as a wall: every City Planner building
+    fl0 = flood(cc, r0, WALL_GROW, ext(r0), centre=True)     # ring 0 alone (reported, not checked)
     gates = fl["gates"]
     gaps = street_gaps(ps, ring)
     lo, hi = want["street_m"]
     ok_gaps = [g for g in gaps if lo <= g <= hi]
-    facts = {"buildings": len(ps), "ring0": len(r0), "ring1": ring.count(1), "beyond": sum(k >= 2 for k in ring),
+    facts = {"buildings": len(ps), "ring0": len(r0), "ring1": ring.count(1), "beyond": sum(k >= 2 or k < 0 for k in ring),
              "closed": fl["closed"], "openings": len(gates), "gates": gates, "street_gaps": gaps,
+             "ring0_openings": [(g["width"], g["side"] + (" corner" if g["corner"] else "")) for g in fl0["gates"]],
              "street_ok": f"{len(ok_gaps)}/{len(gaps)}", "ring": ring}
     fails = []
     if want.get("ring_closed") and not fl["closed"]:
@@ -289,8 +303,8 @@ def judge_town(run, v1_cache={}) -> dict:
 def town_line(rid, j) -> str:
     def one(f):
         g = ", ".join(f"{x['width']} m {x['side']}{' corner' if x['corner'] else ''}" for x in f["gates"])
-        return (f"{'MATCH' if f['match'] else 'no'} {f['why']} | closed {f['closed']}, openings {f['openings']} [{g}], "
-                f"rings {f['ring0']}/{f['ring1']}/+{f['beyond']}, street {f['street_ok']} {f['street_gaps']}")
+        return (f"{'MATCH' if f['match'] else 'no'} {f['why']} | openings {f['openings']} [{g}], "
+                f"rings {f['ring0']}/{f['ring1']}/+{f['beyond']}, street {f['street_ok']} {f['street_gaps']}, ring 0 alone {f.get('ring0_openings')}")
     return f"{rid}:\n  jev {one(j['jev'])}\n  v1  {one(j['v1'])}"
 
 
