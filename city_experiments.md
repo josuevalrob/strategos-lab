@@ -426,8 +426,8 @@ Judge fixes (city_judge.py, town only):
 |---|---|---|---|
 | town6 | openings = ways out of the city (flood over all Jev buildings, per option, ~0.01 s each); option lists the ways out it leaves | 093901 | 2 openings (26 m right flank, 2 m back), street 1/11 |
 | town5 / town6 + P0 | P0 = verbatim + "Close each ring before the next one starts." | 094041, 094043, 094045 / 094048, 094050, 094052 | town5: 3/3/1 openings, street 10/15, 11/16, 0/13; town6: 6/1/2 openings |
-| town7 | one composed clause ("continues the first ring toward the back, shoulder to shoulder with a house, a street (10 m) between it and the civic centre"); "blocks the way straight out of the middle of the civic centre's front"; only what a spot changes in the ways out | 3 runs (094933...) | 0/1/1 openings, no gate anywhere, street 0/4, 0/4, 2/7; q1 "built against" .25 vs "a street" .18 |
-| town5 / town7 + P1 | P1 = rings a street apart, shoulder to shoulder, each ring closed before the next, one gate one street wide on front, left, right | 095016-095031 | town5: 2/2/3 openings, street 6/8, 7/8, 0/3; town7: 2/4/5 |
+| town7 | one composed clause ("continues the first ring toward the back, shoulder to shoulder with a house, a street (10 m) between it and the civic centre"); "blocks the way straight out of the middle of the civic centre's front"; only what a spot changes in the ways out | 094831, 094833, 094835 | 0/1/1 openings, no gate anywhere, street 0/4, 0/4, 2/7; q1 "built against" .25 vs "a street" .18 |
+| town5 / town7 + P1 | P1 = rings a street apart, shoulder to shoulder, each ring closed before the next, one gate one street wide on front, left, right | town5 095021, 095023, 095025; town7 095027, 095029, 095031 | town5: 2/2/3 openings, street 6/8, 7/8, 0/3; town7: 2/4/5 |
 
 Probe (6 decisive steps x 2 asks, P of options with an 8-12 m inner street): "wall" .30, + no "stands apart" for a
 street gap .29, exact goal phrase "a street about 10 m wide between it and" .29. Wording of the street fact is not
@@ -437,8 +437,8 @@ the lever once rings exist; shoulder to shoulder + "continues the ring" win.
 
 | variant | change | runs | judge (Jev) |
 |---|---|---|---|
-| town7 + P2, gate_middle | P2 = P1 with "a gate one street wide in the middle of the front side, of the left flank and of the right flank; the back side and the corners stay closed"; fact "blocks the middle of the front side" | 095553, 095555, 095557 | 2/2/1 openings, never a gate on front/left/right; street 2/5, 2/3, 6/6 |
-| town8 | no middle fact; a gate is named only where a spot leaves one ("leaving a gate one street wide (10 m) on the left flank between it and the house"); way-out facts only "closes the city all around" and a new slit | verbatim 3 runs (100255...), P1 3 runs | verbatim: 3/3/3 openings (left-flank corner 6-8 m, back 6 m, right flank 4-28 m), street 6/7, 6/9, 1/3; P1: 3/3/4, street 6/13, 4/5, 0/5 |
+| town7 + P2, gate_middle | P2 = P1 with "a gate one street wide in the middle of the front side, of the left flank and of the right flank; the back side and the corners stay closed"; fact "blocks the middle of the front side" | 095406, 095408, 095410 | 2/2/1 openings, never a gate on front/left/right; street 2/5, 2/3, 6/6 |
+| town8 | no middle fact; a gate is named only where a spot leaves one ("leaving a gate one street wide (10 m) on the left flank between it and the house"); way-out facts only "closes the city all around" and a new slit | verbatim 095710, 095714, 095718; P1 095712, 095716, 095720 | verbatim: 3/3/3 openings (left-flank corner 6-8 m, back 6 m, right flank 4-28 m), street 6/7, 6/9, 1/3; P1: 3/3/4, street 6/13, 4/5, 0/5 |
 
 Gate width range in checks.json set to v1's own geometry: a 10 m street widened by a leftover shorter than the
 largest building + gap (21 m): 8-31 m (was 6-24).
@@ -454,3 +454,47 @@ Lessons (rounds 9-10):
 24. The build order in the goal (P0, P1) does not stop ring 2 from starting while ring 1 is open: the open part of
     ring 1 is where the mines are, with no possible spot left in ring 1 there.
 25. Measure the measure: a 1 m raster that paints touched cells closes 4 m gaps and reads a 10 m gate as 7 m.
+
+## Rounds 11-13: each side's consequence in the goal's phrases; gates composed into the ring (2026-10-07)
+
+P3 (proposed line, civ JSON untouched) = P1 with "Gates only to the front and the two flanks: every ring has one gate
+one street wide on the front side, on the left flank and on the right flank; the back side and the corners of every
+ring are closed."
+
+| round | variant | change | runs | judge (Jev) |
+|---|---|---|---|---|
+| 11 | town9 | per side/corner of the spot's ring, same rule for every side: "closes the back side of the first ring", "closes the south corner of the first ring", "leaves a gate one street wide (10 m) on the front side of the first ring" (a side is open while an opening >= 8 m touches it); state per ring: closed / gates / still open | verbatim 100203, 100207, 100211; P3 100205, 100209, 100213 | verbatim: 4/4/4 openings, street 1/3, 1/5, 0/4; P3: 3/3/3 openings, street 13/14, 0/4, 3/6; a left-flank gate in 100213 |
+| 12 | town10 | + spots flush against a u-face of one Jev building and a v-face of another (corner where two rows meet); the gate in the ring clause: "continues the first ring toward the back across a gate one street wide (10 m) on the left flank" | verbatim 100604, 100608, 100612; P3 100606, 100610, 100614 | verbatim: 3/2/3 openings, no gate on front/left, street 7/9, 0/3, 1/3; P3: 4/5/7 openings, left-flank gate 3/3, right-flank gate 3/3 (16-28 m), front 0/3, street 2/3, 13/14, 2/3 |
+| 13 | town11 | + the gate fact whenever a spot leaves a street-wide gap to its ring neighbour (not only once a side is enclosed) | verbatim 101037, 101041, 101045; P3 101039, 101043, 101047 | verbatim: 2/2/2 openings, no gate front/left, street 0/3, 0/3, 5/8; P3: 8/8/5 openings, front gate 2/3, left 3/3, right 3/3, street 10/15, 10/16, 2/4 |
+
+100610 (town10 + P3), the best first ring: q1 one street out (.65), q3/q6/q8 close the east, north and west corners,
+q4-q5 leave a left-flank gate ("leaves a gate one street wide (10 m) on the left flank of the first ring" .36, then
+"continues the first ring toward the back across a gate" .49), q7 refuses a back gate (.13 vs continuing .35).
+
+### Verdict after 6 rounds (8-13): stop rule reached, no design meets all v1 measures
+
+Per measure, best 3-run group (Y = runs that meet it):
+| measure | verbatim line, town8 (095710/14/18) | verbatim, town10 (100604/08/12) | P3, town10 (100606/10/14) | P3, town11 (101039/43/47) | v1's own town |
+|---|---|---|---|---|---|
+| <= 3 openings | 3/3 | 3/3 | 0/3 | 0/3 | no (5) |
+| gate on front | 0/3 | 0/3 | 0/3 | 2/3 | yes (13 m) |
+| gate on left flank | 0/3 | 0/3 | 3/3 | 3/3 | yes (31 m) |
+| gate on right flank (8-31 m) | 1/3 | 0/3 | 3/3 | 3/3 | yes (15 m) |
+| no corner / back opening | 0/3 | 0/3 | 0/3 | 0/3 | no (back 13 m, front corner 9 m) |
+| street between rings 8-12 m (>= 80 %) | 1/3 | 0/3 | 1/3 | 0/3 | no (14-20 m) |
+
+Open problems:
+- Corners: rows that meet at a corner leave an L-shaped gap (8 m in most runs) that no house fits; v1 avoids it by
+  letting the front/back sides own the corner squares. The metal mine sits on the front-right corner of a one-street
+  ring: physically closed, open for the judge (mines are not ring pieces).
+- Gates: verbatim line, Jev closes the front and the left flank in every run (36 runs). A goal that names a gate per
+  side (P3) plus a gate fact gives flank gates, then gates everywhere (round 13: 8 openings) - phrase pull both ways.
+- Jev is not deterministic (q1 s11 .42/.33 vs .33/.37); most decisions are .1-.3, so 3/3 needs larger margins.
+- Feasibility: v1's own rules at minute 20 leave 4-5 openings at every yard size on this map.
+
+Lessons (rounds 11-13):
+26. Consequences per side in the goal's own phrases work in both directions: with P3, "closes the back side of the
+    first ring" beat a back gate (.35 vs .13) and "leaves a gate ... on the left flank of the first ring" won (.36);
+    but the gate phrase, once said early on every side, wins on too many sides (round 13).
+27. A gate composed into the ring clause ("continues the first ring ... across a gate one street wide") is taken
+    where a lone "in the first ring, ... 10 m from its nearest building" was not (.49 vs .30 for plain continuing).

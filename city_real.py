@@ -963,6 +963,22 @@ class TownBuilder:
             for cu in (su - shu + hu, su + shu - hu):
                 yield cu, cv
 
+    def pair_spots(self, hu, hv):
+        """Flush against a u-face of one City Planner building and a v-face of another at once (fills the corner
+        where two rows meet); kept only when it touches both."""
+        ps = [p["rect"] for p in self.placed]
+        for a in ps:
+            for b in ps:
+                if a is b:
+                    continue
+                for su in (1, -1):
+                    cu = a[0] + su * (a[2] + FLUSH + hu)
+                    for sv in (1, -1):
+                        cv = b[1] + sv * (b[3] + FLUSH + hv)
+                        r = (cu, cv, hu, hv)
+                        if Map.gap(r, a) <= TOL and Map.gap(r, b) <= TOL:
+                            yield cu, cv
+
     @staticmethod
     def diagonal(s, hu, hv, g1, g2):
         """Off a corner of s: g1 from one face and g2 from the other (a ring's corner piece)."""
@@ -1007,6 +1023,8 @@ class TownBuilder:
             if VARIANT.get("diag"):
                 cands += [c for s in srcs for g1 in (FLUSH, STREET) for g2 in (FLUSH, STREET)
                           for c in self.diagonal(s, hu, hv, g1, g2)]
+            if VARIANT.get("pairs"):
+                cands += list(self.pair_spots(hu, hv))
             for cu, cv in cands:
                 r = (round(cu * 2) / 2, round(cv * 2) / 2, hu, hv)
                 if r not in seen:
@@ -1749,8 +1767,120 @@ class TownBuilder8(TownBuilder7):
         return ""
 
 
+SIDES4 = ("front side", "left flank", "right flank", "back side")
+
+
+class TownBuilder9(TownBuilder8):
+    """town9: what a spot does to each side and corner of its ring, in the goal's phrases: 'closes the back side of
+    the first ring', 'closes the south corner of the first ring', 'leaves a gate one street wide (10 m) on the front
+    side of the first ring'.  A side is open while an opening of at least 8 m touches it; a corner while any
+    opening covers it.  Same rule for every side (the code never says which side should keep a gate)."""
+
+    def side_state(self, band, runs):
+        pts = self.loop(band)
+        sides, corners = set(), set()
+        for o in runs:
+            w = len(o) + 1
+            if w >= 8:
+                sides |= {pts[i][2] for i in o if not pts[i][3]}
+            corners |= {self.corner_name(pts[i][0], pts[i][1]) for i in o if pts[i][3]}
+        return sides, corners
+
+    def gate_left(self, band, runs, side):
+        """Width of a street-wide opening (8-31 m) lying on `side`, or None."""
+        pts = self.loop(band)
+        for o in runs:
+            w = len(o) + 1
+            if 8 <= w <= 31 and all(pts[i][2] == side and not pts[i][3] for i in o):
+                return w
+        return None
+
+    def side_fact(self, r) -> str:
+        bands = self.bands(self.placed)
+        if not bands:
+            return ""
+        k, rel = self.where_rings(r, bands)
+        if rel != "in":
+            return ""
+        band = bands[k - 1]
+        before, after = self.openings(band), self.openings(band, r)
+        if before == after:
+            return ""
+        sb, cb = self.side_state(band, before)
+        sa, ca = self.side_state(band, after)
+        ring = f"of the {ORD[k]} ring"
+        parts = [f"closes the {s} {ring}" for s in SIDES4 if s in sb and s not in sa]
+        parts += [f"closes the {c} {ring}" for c in sorted(cb - ca)]
+        fw = self.face_word(r)
+        if fw in SIDES4 and fw in sa:
+            g = self.gate_left(band, after, fw)
+            if g and g != self.gate_left(band, before, fw):
+                parts.append(f"leaves a gate one street wide ({metres(g)}) on the {fw} {ring}")
+        if VARIANT.get("gate_early") and not any("leaves a gate" in x for x in parts):
+            m = TownBuilder7.main_clause(self, r)      # a street-wide gap to the next building of its ring = a gate
+            if ", leaving a gate one street wide (" in m:
+                g = m.split(", leaving a gate one street wide (")[1].split(")")[0]
+                p = min(band[2], key=lambda q: Map.gap(r, q["rect"]))
+                side = self.face_word(((r[0] + p["rect"][0]) / 2, (r[1] + p["rect"][1]) / 2, 0, 0))
+                parts.append(f"leaves a gate one street wide ({g}) {'at' if 'corner' in side else 'on'} the {side} {ring}")
+        return "; ".join(parts[:2])
+
+    def main_clause(self, r) -> str:
+        out = TownBuilder7.main_clause(self, r)
+        if ", leaving a gate one street wide (" in out:      # the side fact says it, in the same words for every side
+            out = out.split(", leaving a gate one street wide (")[0]
+            if VARIANT.get("gate_cont"):                      # one clause: the ring goes on across the gate
+                bands = self.bands(self.placed)
+                k, _ = self.where_rings(r, bands)
+                p = min(bands[k - 1][2], key=lambda q: Map.gap(r, q["rect"]))
+                ax = 0 if abs(r[0] - p["rect"][0]) - r[2] - p["rect"][2] > abs(r[1] - p["rect"][1]) - r[3] - p["rect"][3] else 1
+                sg = 1 if r[ax] > p["rect"][ax] else -1
+                mid = ((r[0] + p["rect"][0]) / 2, (r[1] + p["rect"][1]) / 2, 0, 0)
+                fw = self.face_word(mid)
+                inner = out.split(f"in the {ORD[k]} ring, ", 1)[1]
+                out = (f"continues the {ORD[k]} ring toward the {TOWARD[(ax, sg)]} across a gate one street wide "
+                       f"({metres(Map.gap(r, p['rect']))}) {'at' if 'corner' in fw else 'on'} the {fw}, {inner}")
+        return out
+
+    def option_text(self, r) -> str:
+        fw = self.face_word(r)
+        parts = [self.main_clause(r)]
+        for extra in (self.side_fact(r), self.opening_fact(r)):
+            if extra:
+                parts.append(extra)
+        where = f"at the {fw} of the civic centre" if "corner" in fw else f"on the {fw} of the civic centre"
+        return f"a {self.new['kind']} {where}: " + "; ".join(parts)
+
+    def state(self) -> str:
+        w, ps = self.w, self.placed
+        lines = [f"Our civic centre: its front faces {w.face['front']}, its flanks face {w.face['left flank']} "
+                 f"and {w.face['right flank']}, its back faces {w.face['back']}."]
+        if not ps:
+            lines.append("Buildings of the city so far: none yet.")
+            return "\n".join(lines)
+        lines.append(f"Buildings of the city so far: {num(len(ps))}: {kind_list([p['kind'] for p in ps])}.")
+        bands = self.bands(ps)
+        for k, band in enumerate(bands, 1):
+            a, b, mem = band
+            street = self.gap_words(a, "the civic centre") if k == 1 else self.gap_words(
+                sorted(self.street_to(p["rect"], bands[k - 2][2]) for p in mem)[len(mem) // 2], f"the {ORD[k - 1]} ring")
+            runs = self.openings(band)
+            so, co = self.side_state(band, runs)
+            gates = [f"a gate one street wide ({metres(g)}) on the {s}" for s in SIDES4
+                     for g in [self.gate_left(band, runs, s)] if g]
+            closed = [s for s in SIDES4 if s not in so] + sorted(set(self.corner_name(u, v) for u, v in
+                                                                    ((1, 1), (1, -1), (-1, 1), (-1, -1))) - co)
+            opened = [s for s in SIDES4 if s in so and not self.gate_left(band, runs, s)] + sorted(co)
+            lines.append(f"The {ORD[k]} ring ({street}): {num(len(mem))} building{'s' if len(mem) > 1 else ''}. "
+                         + (f"Closed: the {', the '.join(closed)}. " if closed else "")
+                         + (f"Gates: {', '.join(gates)}. " if gates else "")
+                         + (f"Still open: the {', the '.join(opened)}." if opened else ""))
+        return "\n".join(lines)
+
+
 TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4,
-                 "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8}
+                 "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8, "town9": TownBuilder9, "town10": TownBuilder9,
+                 "town11": TownBuilder9}
 
 
 TOWN_TEMPLATE = """Role: City planner.
