@@ -80,8 +80,12 @@ class Map:
         self.res = [(k, x, z) for k, pts in snap["resources"].items() if isinstance(pts, list) for x, z, _ in pts]
         self.trees = [(x, z) for k, x, z in self.res if k == "wood"]
         enemy = snap.get("enemy_cc") or []
-        self.enemy = (enemy[0], enemy[1]) if len(enemy) >= 2 and not isinstance(enemy[0], list) else (
-            tuple(enemy[0][:2]) if enemy and isinstance(enemy[0], list) else None)
+        if enemy and isinstance(enemy[0], dict):    # the game's snapshot: [{"id", "player", "x", "z"}]: the nearest
+            e = min(enemy, key=lambda e: math.hypot(e["x"] - self.cc["x"], e["z"] - self.cc["z"]))
+            self.enemy = (e["x"], e["z"])
+        else:
+            self.enemy = (enemy[0], enemy[1]) if len(enemy) >= 2 and not isinstance(enemy[0], list) else (
+                tuple(enemy[0][:2]) if enemy and isinstance(enemy[0], list) else None)
 
     # frames
     def loc(self, x, z):
@@ -755,12 +759,24 @@ def one_run(civ: str, minute: int, total: int, dry: bool, goal_text: str | None 
 
 # == real timeline: question k is asked at the minute Petra's k-th house first appears ==========
 def load_all(path: Path) -> dict:
+    """minute -> snapshot; a snapshot written in parts ("part": [k, n], the same "t") is put back together."""
     out = {}
     for line in path.read_text(errors="replace").splitlines():
         i = line.find("[strategos] snapshot ")
         if i >= 0:
             snap = json.loads(line[i + len("[strategos] snapshot "):])
-            out[snap["m"]] = snap
+            part = snap.pop("part", None)
+            if part is None or part[0] == 1 or out.get(snap["m"], {}).get("t") != snap["t"]:
+                out[snap["m"]] = dict(snap, structures=list(snap.get("structures") or []),
+                                      resources={k: list(v) for k, v in (snap.get("resources") or {}).items()})
+                continue
+            whole = out[snap["m"]]
+            whole["structures"] += snap.get("structures") or []
+            for k, v in (snap.get("resources") or {}).items():
+                whole["resources"].setdefault(k, []).extend(v)
+            for k in ("territory", "enemy_cc"):
+                if k in snap:
+                    whole[k] = snap[k]
     return out
 
 

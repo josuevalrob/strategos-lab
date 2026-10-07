@@ -313,7 +313,8 @@ def town_jev(run):
     hs = {"w": R.PITCH, "d": R.PITCH, "tpl": "house"}
     placed = [{"kind": s["kind"], "rect": tuple(s["rect"])} for s in run["steps"] if s.get("rect")]
     drop = {(d["tpl"], d["x"], d["z"]): d["minute"] for d in run.get("dropped", [])}
-    m, _ = R.town_maps(snaps, run["steps"][-1]["minute"], placed, dict(drop), hs)
+    last = run["source"]["until"] if run.get("game") else run["steps"][-1]["minute"]
+    m, _ = R.town_maps(snaps, last, placed, dict(drop), hs)
     return m, placed
 
 
@@ -328,7 +329,8 @@ def judge_town(run, v1_cache={}) -> dict:
         v1_cache[until] = (vm, vps, left, measure_town(vm.rect(vm.cc), vps, want, mine_walls(vm)))
     vm, vps, left, v1 = v1_cache[until]
     rel = relative(jev, v1)
-    complete = len([x for x in run["steps"] if x.get("rect")]) == len(run["source"]["events"]) and not run["summary"].get("error")
+    complete = run.get("game") or (len([x for x in run["steps"] if x.get("rect")]) == len(run["source"]["events"])
+                                   and not run["summary"].get("error"))      # a game's town is what stands then
     if not complete:                       # a run that stopped early is a smaller town: no pass
         rel = {**rel, "pass": False, "incomplete": run["summary"].get("error") or "stopped early"}
     out = {"jev": jev, "v1": {**v1, "left_to_petra": left}, "relative": rel, "complete": complete,
