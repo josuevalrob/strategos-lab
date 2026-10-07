@@ -2123,7 +2123,8 @@ class TownBuilder15(TownBuilder12):
                 yield (along, radial) if ax == 1 else (radial, along)
 
     def nogate_spots(self, hu, hv):
-        """A side answered 'no gate': the middle of that side, inner face on the ring's inner face."""
+        """A side answered 'no gate': the middle of that side (with nogate_all: every position the gate question
+        offered there, 5 m apart), inner face on the ring's inner face."""
         c = self.cc_rect
         for g in getattr(self, "gate_list", []):
             if g["rect"] is not None:
@@ -2131,7 +2132,10 @@ class TownBuilder15(TownBuilder12):
             ax, sg = SIDE_AX[g["side"]]
             h = (hu, hv)
             radial = sg * (c[2 + ax] + g["a"] + h[ax])
-            yield (0.0, radial) if ax == 1 else (radial, 0.0)
+            lim = (c[3 - ax] + g["a"] + 7) * math.tan(math.radians(30)) - STREET / 2
+            ts = [5 * i for i in range(-int(lim // 5), int(lim // 5) + 1)] if VARIANT.get("nogate_all") else [0]
+            for t in ts:
+                yield (float(t), radial) if ax == 1 else (radial, float(t))
 
     def mine_sources(self) -> list:
         """Stone and metal mines near the city as squares of their clearance (terrain: a building may stand
@@ -2166,6 +2170,31 @@ class TownBuilder15(TownBuilder12):
         out.sort(key=lambda r: (Map.gap(r, self.cc_rect), r))
         return out
 
+    def side_fact(self, r) -> str:
+        out = super().side_fact(r)
+        if not VARIANT.get("upto_gate"):
+            return out
+        bands = self.bands(self.placed)
+        if not bands:
+            return out
+        k, rel = self.where_rings(r, bands)
+        fw = self.face_word(r)
+        gate = next((g for g in getattr(self, "gate_list", []) if g["ring"] == k and g["side"] == fw and g["rect"] is not None), None)
+        if rel != "in" or gate is None:
+            return out
+        band = bands[k - 1]
+        o = 1 - SIDE_AX[fw][0]
+
+        def up_to_gate(runs) -> bool:
+            pts = self.loop(band)
+            mine = [ru for ru in runs if any(pts[i][2] == fw and not pts[i][3] for i in ru)]
+            return len(mine) == 1 and len(mine[0]) + 1 <= 31 and \
+                any(abs((pts[i][0], pts[i][1])[o] - gate["t"]) <= STREET / 2 for i in mine[0])
+        if up_to_gate(self.openings(band, r)) and not up_to_gate(self.openings(band)):
+            fact = f"closes the {fw} of the {ORD[k]} ring up to its gate"
+            return fact + ("; " + out if out else "")
+        return out
+
     def beside_gate(self, r) -> str:
         for g in getattr(self, "gate_list", []):
             if g["rect"] is not None and -0.5 <= Map.gap(r, g["rect"]) <= 1.5:
@@ -2179,8 +2208,14 @@ class TownBuilder15(TownBuilder12):
             for g in getattr(self, "gate_list", []):
                 if g["rect"] is None and self.face_word(r) == g["side"]:
                     ax, _ = SIDE_AX[g["side"]]
-                    if abs(r[1 - ax]) < 0.5 and abs(self.din(r) - g["a"]) < 1:
-                        extra.append(f"in the middle of the {g['side']} of the {ORD[g['ring']]} ring, which has no gate")
+                    on_mark = abs(r[1 - ax]) < 0.5 or (VARIANT.get("nogate_all") and abs(r[1 - ax] / 5 - round(r[1 - ax] / 5)) < 0.1)
+                    if on_mark and abs(self.din(r) - g["a"]) < 1:
+                        if VARIANT.get("nogate_lead"):      # the consequence first, in the goal's words
+                            head, rest = t.split(": ", 1)
+                            pos = "the middle of the" if abs(r[1 - ax]) < 0.5 else "part of the"
+                            t = f"{head}: closes {pos} {g['side']} of the {ORD[g['ring']]} ring, which has no gate; {rest}"
+                        else:
+                            extra.append(f"in the middle of the {g['side']} of the {ORD[g['ring']]} ring, which has no gate")
         if VARIANT.get("mine_edges"):
             for k, sq in self.mine_sources():
                 if -0.5 <= Map.gap(r, sq) <= 1.5:
@@ -2240,9 +2275,10 @@ class TownBuilder15(TownBuilder12):
         o, a, c = 1 - ax, band[0], self.cc_rect
         lim = (c[2 + o] + a + 7) * math.tan(math.radians(30)) - STREET / 2
         out = []
+        r0 = None if k == 1 or not VARIANT.get("gate_own_ring") else c[2 + ax] + a - STREET   # an outer gate: from its inner street
         for i in range(-int(lim // 5), int(lim // 5) + 1):
             t = 5 * i
-            rect = self.gate_rect(side, a, t)
+            rect = self.gate_rect(side, a, t, r0)
             if any(Map.gap(rect, p["rect"]) < 0 for p in self.placed):
                 continue                                  # a building stands there already (an inner gate is fine)
             if VARIANT.get("gate_no_mine") and any(Map.gap(rect, (sq[0], sq[1], MINE_WALL, MINE_WALL)) < 0
@@ -2270,7 +2306,7 @@ class TownBuilder15(TownBuilder12):
 TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4,
                  "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8, "town9": TownBuilder9, "town10": TownBuilder9,
                  "town11": TownBuilder9, "town12": TownBuilder12, "town13": TownBuilder12, "town14": TownBuilder12,
-                 "town15": TownBuilder15, "town16": TownBuilder15, "town17": TownBuilder15, "town18": TownBuilder15}
+                 "town15": TownBuilder15, "town16": TownBuilder15, "town17": TownBuilder15, "town18": TownBuilder15, "town19": TownBuilder15, "town20": TownBuilder15, "town21": TownBuilder15, "town22": TownBuilder15}
 
 
 TOWN_TEMPLATE = """Role: City planner.

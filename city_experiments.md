@@ -649,3 +649,29 @@ corner/back 3, street 0.
 |---|---|---|---|---|---|
 | 23 | 130314, 130316, 130318 | Y, n (left 34 m), Y | 0, 0, 0 m | closed x3 | right gate now 10 m NW of the middle (.51-.55); 130316: ring 2 at q3, left flank back half empty |
 | 24 (+ position words only on ring/gate spots) | 130732, 130734, 130736 | Y, n (9 ways out), Y | 32, 10, 0 m | 4 m slit x3 | worse; dropped |
+
+## Rounds 25-27: back and metal corner closed (2026-10-07)
+
+| round | change (cumulative on round 23, town17) | runs | relative + F/L/R | back opening | metal corner |
+|---|---|---|---|---|---|
+| 25 | "closes the left flank of the first ring up to its gate" when a piece leaves that side open only at its gate (<= 31 m) | 131118, 131120, 131122 | Y, n (10 ways out), n | 0, 8, 8 m | closed, 8 m, 8 m |
+| 26 | an outer ring's gate strip starts at the street inside that ring, not at the civic centre | 131622, 131624, 131626 | Y, Y, Y | 12, 20, 28 m | 2 m slit, closed, closed |
+| 27 | a "no gate" side gets a spot at every position the gate question offered (5 m apart), each led by "closes the middle of / part of the back side of the first ring, which has no gate" | 132053, 132055, 132057 | **Y, Y, Y** | **8, 0, 0 m** | **closed x3** |
+
+Round 25 failure (131120): ring 2's front gate was picked at 15 m (ring 1's at 5 m); its strip ran from the civic
+centre and cut ring 1's unbuilt front-right, so the house that closes the front against the metal mine became
+impossible. Round 26 fix: an outer gate's strip covers only its own ring and the street inside it.
+Round 26 back failures: the back middle still empty when Petra's field lands (minute 8): the one no-gate spot had
+.05-.10 at q2-q8; leading with its fact moved it .05 -> .07. Round 27: several such spots (total .09 at q4, .23 at
+q7), each saying it closes part of the back side; the back middle is built before the field in all three runs.
+
+Stop rule met in round 27: relative pass with front + left + right, back <= 14 m (v1's), metal corner closed, 3/3.
+Jev vs v1 (132053/55/57): ways out 8, 6, 7 vs 8; width 58, 46, 58 vs 96 m; gate sides 3 vs 2; corner/back 2, 1, 0 vs 3;
+street .80, .33, .62 vs 0. Ring-1 gate picks: front 5 m SW of middle .67-.75, left middle .79-.82, right 10 m NW of
+middle .52-.57 (the middle has the stone mine: impossible), back "no gate" 1.0.
+v1's absolute measures (reference): 8 ways out (> 3); gates front 16 m, right flank 16 m, left flank 32 m (over the
+8-31 m range); openings at the back (14 m), front corner (12 m) and back corner (2 m); street 0/7 (14-20 m).
+Jev's absolute (132053): 8 ways out, back corner 8 m, back 4 m slit.
+
+Lesson 34: a time-critical spot (the field arrives at minute 8) needs weight, not words: one option at .05 loses to
+forty; five options that all say the same consequence carry .2 and get built.
