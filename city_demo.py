@@ -604,9 +604,9 @@ def build(variant: str, goal_text: str, houses: list, n: int, total: int):
 
 
 # == lab client (same pattern as mcp_server._post) ============================================
-def ask(prompt: str, options: list) -> dict:
+def ask(prompt: str, options: list, instructions: str | None = None) -> dict:
     body = {"run": CARRIER["run"], "idx": CARRIER["idx"], "model": "jev", "prompt": prompt,
-            "questions": {CARRIER["qkey"]: {"type": "choice", "instructions": INSTRUCTIONS,
+            "questions": {CARRIER["qkey"]: {"type": "choice", "instructions": instructions or INSTRUCTIONS,
                                             "criteria": {o["id"]: o["text"] for o in options}}}}
     req = urllib.request.Request(LAB + "/api/ask", data=json.dumps(body).encode(), method="POST",
                                  headers={"X-Lab": "1", "Content-Type": "application/json"})
@@ -676,11 +676,11 @@ def save(run: dict):
     tmp.replace(idx_path)
 
 
-def ask_retry(prompt, options, n):
-    r = ask(prompt, options)
+def ask_retry(prompt, options, n, instructions=None):
+    r = ask(prompt, options, instructions)
     if not r.get("ok"):   # transport error only (not a wrong answer)
         print(f"  q{n}: {r.get('error')} -- retrying once", flush=True)
-        r = ask(prompt, options)
+        r = ask(prompt, options, instructions)
     return r
 
 

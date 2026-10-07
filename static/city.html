@@ -316,6 +316,13 @@
       board.appendChild(poly(corners(p[0], p[1], a, hw - 1, hd - 1), "r-slot" + (k >= 1 && id === step.choice ? " pick" : "")));
     });
     if (r.town) {
+      (r.gates || []).forEach(function (gt) {
+        if (!gt.rect || gt.after > Math.max(k, 1)) return;
+        var gg = el("g", {});
+        gg.appendChild(el("title", {}, "gate, ring " + gt.ring + " " + gt.side + ": " + gt.text + " (p " + pct(gt.p) + ")"));
+        gg.appendChild(poly(corners(gt.rect.x, gt.rect.z, gt.rect.a, gt.rect.w, gt.rect.d), "r-gate"));
+        board.appendChild(gg);
+      });
       if (step && step.slots) Object.keys(step.slots).forEach(function (id) {
         var p = step.slots[id];
         board.appendChild(poly(corners(p.x, p.z, p.a, p.w - 1, p.d - 1), "r-slot" + (k >= 1 && id === step.choice ? " pick" : "")));
@@ -370,7 +377,10 @@
         "<span>spots</span><span>" + esc(r.rule) + "</span>" +
         "<span>timeline</span><span>" + r.source.events.length + " City Planner buildings Petra queued, each asked at the minute she queued it: " +
           esc(r.source.events.map(function (e) { return e.kind + " " + e.minute; }).join(", ")) + "</span>" +
-        "<span>flags</span><span>" + esc(JSON.stringify(r.flags || {})) + "</span></div>" +
+        "<span>flags</span><span>" + esc(JSON.stringify(r.flags || {})) + "</span>" +
+        ((r.gates || []).length ? "<span>gate picks</span><span>" + r.gates.map(function (g) {
+          return "ring " + g.ring + " " + esc(g.side) + ": " + esc(g.text.split(":")[0]) + " (" + pct(g.p) + ")"; }).join("<br>") + "</span>" : "") +
+        "</div>" +
         '<p class="muted small">Left: Jev\'s town (numbers = question). Right: v1\'s town on the same maps, replayed by minute. Dashed: the spots offered. Fields tan; Petra\'s other buildings grey.</p>' +
         (r.steps[0] ? "<details><summary class=\"small\">Prompt of question 1</summary><pre class=\"prompt mono\">" +
           esc(r.steps[0].prompt) + "</pre></details>" : "");

@@ -2078,9 +2078,150 @@ class TownBuilder12(TownBuilder9):
         return "\n".join(lines)
 
 
+SIDE_AX = {"front side": (1, 1), "back side": (1, -1), "right flank": (0, 1), "left flank": (0, -1)}
+GATE_SIDES = ("front side", "left flank", "right flank", "back side")
+DEPTH_MAX = 20       # deepest planned building but the arsenal: a ring reaches this far out from its inner face
+RES_NAME = {"stone": "the stone mine", "metal": "the metal mine", "food.fruit": "berry bushes", "wood": "trees"}
+GATE_TEMPLATE = """Role: City planner.
+Goal: {goal}
+Map: a real map seen from above. A street is about {street} m wide.
+{state}
+The {ring} ring has just started: {first}.
+Question: where is the gate on the {side} of the {ring} ring?"""
+
+
+class TownBuilder15(TownBuilder12):
+    """town15 (round 21): a gate question per side when a ring starts.  Options = positions along that side (5 m
+    steps, the whole gate inside the side, not at a corner), in compass words from the side's middle, each with what
+    stands in it and beyond it; plus 'no gate'.  A picked gate is a street-wide strip from the civic centre's face out
+    through the ring and one street beyond; a building there would block it, so such spots are impossible (code
+    removes them like any other impossible spot).  Gates of an inner ring keep the strip free, so an outer ring's
+    gate can only be where it lines up.  Same four questions for every civ."""
+
+    def possible(self, r) -> bool:
+        if any(Map.gap(r, g) < 0 for g in getattr(self, "gate_rects", [])):
+            return False
+        return super().possible(r)
+
+    def gate_edge_spots(self, hu, hv):
+        """Against either edge of a picked gate's strip, inner face on the ring's inner face: the ring goes on on
+        both sides of its gate."""
+        c = self.cc_rect
+        for g in getattr(self, "gate_list", []):
+            if g["rect"] is None:
+                continue
+            ax, sg = SIDE_AX[g["side"]]
+            o, h = 1 - ax, (hu, hv)
+            radial = sg * (c[2 + ax] + g["a"] + h[ax])
+            for side in (1, -1):
+                along = g["t"] + side * (STREET / 2 + h[o])
+                yield (along, radial) if ax == 1 else (radial, along)
+
+    def spots(self) -> list:
+        out = super().spots()
+        if not VARIANT.get("gate_edges"):
+            return out
+        seen = set(out)
+        for hu, hv in self.shapes():
+            for cu, cv in self.gate_edge_spots(hu, hv):
+                r = (round(cu * 2) / 2, round(cv * 2) / 2, hu, hv)
+                if r not in seen:
+                    seen.add(r)
+                    if self.possible(r):
+                        out.append(r)
+        out.sort(key=lambda r: (Map.gap(r, self.cc_rect), r))
+        return out
+
+    def beside_gate(self, r) -> str:
+        for g in getattr(self, "gate_list", []):
+            if g["rect"] is not None and -0.5 <= Map.gap(r, g["rect"]) <= 1.5:
+                return f"beside the gate on the {g['side']} of the {ORD[g['ring']]} ring"
+        return ""
+
+    def option_text(self, r) -> str:
+        t = super().option_text(r)
+        b = self.beside_gate(r) if VARIANT.get("gate_edges") else ""
+        return t + "; " + b if b else t
+
+    def where_phrase(self, r) -> str:
+        fw = self.face_word(r)
+        return f"at the {fw} of the civic centre" if "corner" in fw else f"on the {fw} of the civic centre, {self.along(r)}"
+
+    def gate_rect(self, side, a, t, r0=None, r1=None):
+        ax, sg = SIDE_AX[side]
+        c = self.cc_rect
+        r0 = c[2 + ax] if r0 is None else r0
+        r1 = c[2 + ax] + a + DEPTH_MAX + STREET if r1 is None else r1
+        mid, half = sg * (r0 + r1) / 2, (r1 - r0) / 2
+        return (t, mid, STREET / 2, half) if ax == 1 else (mid, t, half, STREET / 2)
+
+    def gate_where(self, side, t) -> str:
+        if t == 0:
+            return f"in the middle of the {side}"
+        ax, _ = SIDE_AX[side]
+        e = self.m.eu if ax == 1 else self.m.ev
+        d = compass(e[0] * (1 if t > 0 else -1), e[1] * (1 if t > 0 else -1))
+        return f"{abs(t)} m {d} of the middle of the {side}"
+
+    def gate_words(self, side, k, a, t) -> str:
+        c, m = self.cc_rect, self.m
+        ax, sg = SIDE_AX[side]
+        inner, outer = c[2 + ax] + a, c[2 + ax] + a + DEPTH_MAX
+        within = self.gate_rect(side, a, t, inner, outer)
+        beyond = self.gate_rect(side, a, t, outer, outer + 50)
+        beyond = (beyond[0], beyond[1], beyond[2] + 2, beyond[3]) if ax == 1 else (beyond[0], beyond[1], beyond[2], beyond[3] + 2)
+        res_in, res_out = [], []
+        for kind, x, z in m.res:
+            if kind not in RES_R:
+                continue
+            if m.point_gap(within, x, z) < RES_R[kind] and RES_NAME[kind] not in res_in:
+                res_in.append(RES_NAME[kind])
+            elif m.point_gap(beyond, x, z) < RES_R[kind] and RES_NAME[kind] not in res_out:
+                res_out.append(RES_NAME[kind])
+        out_b = [p["kind"] for p in self.anchors if Map.gap(beyond, p["rect"]) < 0]
+        parts = [f"{' and '.join(res_in)} {'stands' if len(res_in) == 1 and 'bushes' not in res_in[0] and res_in[0] != 'trees' else 'stand'} in it"] if res_in else []
+        lead = ([kind_list(out_b)] if out_b else []) + res_out
+        parts.append("its street leads out to " + (", ".join(lead) if lead else "open ground"))
+        if m.enemy:
+            ex, ez = m.enemy[0] - m.cc["x"], m.enemy[1] - m.cc["z"]
+            eu, ev = ex * m.eu[0] + ez * m.eu[1], ex * m.ev[0] + ez * m.ev[1]
+            if (sg * (ev if ax == 1 else eu)) > 0.7 * math.hypot(eu, ev):
+                parts.append("toward the enemy")
+        return ", ".join(parts)
+
+    def gate_options(self, k, side, band) -> list:
+        ax, _ = SIDE_AX[side]
+        o, a, c = 1 - ax, band[0], self.cc_rect
+        lim = (c[2 + o] + a + 7) * math.tan(math.radians(30)) - STREET / 2
+        out = []
+        for i in range(-int(lim // 5), int(lim // 5) + 1):
+            t = 5 * i
+            rect = self.gate_rect(side, a, t)
+            if any(Map.gap(rect, p["rect"]) < 0 for p in self.placed):
+                continue                                  # a building stands there already (an inner gate is fine)
+            out.append({"id": f"g{len(out)}", "t": t, "rect": rect,
+                        "text": f"a gate one street wide {self.gate_where(side, t)} of the {ORD[k]} ring: "
+                                + self.gate_words(side, k, a, t)})
+        out.append({"id": f"g{len(out)}", "t": None, "rect": None,
+                    "text": f"no gate on the {side} of the {ORD[k]} ring: that side stays closed"})
+        return out
+
+    def state(self) -> str:
+        s = super().state()
+        gs = getattr(self, "gate_list", [])
+        if gs:
+            by = {}
+            for g in gs:
+                by.setdefault(g["ring"], []).append(f"{g['side']}: " + (self.gate_where(g["side"], g["t"]) if g["t"] is not None
+                                                                      else "none, closed"))
+            s += "\n" + " ".join(f"Gates of the {ORD[k]} ring, kept free: {'; '.join(v)}." for k, v in sorted(by.items()))
+        return s
+
+
 TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4,
                  "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8, "town9": TownBuilder9, "town10": TownBuilder9,
-                 "town11": TownBuilder9, "town12": TownBuilder12, "town13": TownBuilder12, "town14": TownBuilder12}
+                 "town11": TownBuilder9, "town12": TownBuilder12, "town13": TownBuilder12, "town14": TownBuilder12,
+                 "town15": TownBuilder15, "town16": TownBuilder15}
 
 
 TOWN_TEMPLATE = """Role: City planner.
@@ -2127,6 +2268,40 @@ def town_maps(snaps: dict, minute: int, placed: list, dropped: dict, hsize: dict
     return Map(snap, hsize), new_drops
 
 
+def ask_gates(b, m, goal, placed, gates, run, n, dry) -> str | None:
+    """If the building just placed started a ring, ask the four gate questions of that ring."""
+    g = TownBuilder15(m, goal, placed, b.new)
+    g.gate_rects, g.gate_list = [x["rect"] for x in gates if x["rect"]], gates
+    bands = g.bands(placed)
+    k = len(bands)
+    if len(bands[-1][2]) != 1 or bands[-1][2][0] is not placed[-1] or any(x["ring"] == k for x in gates):
+        return None
+    p = placed[-1]
+    first = f"a {p['kind']} {g.where_phrase(p['rect'])}, {g.gap_words(g.din(p['rect']), 'the civic centre') if k == 1 else g.gap_words(g.street_to(p['rect'], bands[k - 2][2]), 'the ' + ORD[k - 1] + ' ring')}"
+    for side in GATE_SIDES:
+        options = g.gate_options(k, side, bands[-1])
+        prompt = GATE_TEMPLATE.format(goal=goal, street=STREET, state=g.state(), ring=ORD[k], first=first, side=side)
+        instr = f"Where is the gate on the {side} of the {ORD[k]} ring?"
+        byid = {o["id"]: o for o in options}
+        if dry or len(options) == 1:                      # one option: nothing to ask
+            r = {"ok": True, "choice": options[0]["id"], "probabilities": {o["id"]: (1.0 if i == 0 else 0.0) for i, o in enumerate(options)}}
+        else:
+            r = cd.ask_retry(prompt, options, f"{n} gate {side}", instr)
+        if not r.get("ok"):
+            return f"q{n} gate {side}: {r.get('error')}"
+        pick, probs = byid[r["choice"]], r.get("probabilities") or {}
+        gates.append({"ring": k, "side": side, "t": pick["t"], "rect": pick["rect"], "a": bands[-1][0]})
+        g.gate_rects = [x["rect"] for x in gates if x["rect"]]
+        top = sorted(probs, key=lambda i: -probs[i])[:5]
+        run["gates"].append({"after": n, "ring": k, "side": side, "t": pick["t"], "text": pick["text"], "p": probs.get(r["choice"]),
+                             "prompt": prompt, "n_options": len(options),
+                             "top": [{"id": i, "p": probs[i], "text": byid[i]["text"]} for i in top if i in byid],
+                             "rect": rect_world(m, pick["rect"], "gate") if pick["rect"] else None})
+        if cd.VERBOSE:
+            print(f"   gate ring {k} {side}: {len(options)} opts -> p={probs.get(r['choice'])}: {pick['text'][:150]}", flush=True)
+    return None
+
+
 def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line: str | None = None) -> dict:
     snaps = load_all(TOWN_LOG)
     events = queue_events(TOWN_LOG, until)
@@ -2143,9 +2318,10 @@ def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line
            "template": TOWN_TEMPLATE, "instructions": "Where does the new building go?",
            "rule": f"spots flush ({FLUSH:g} m) against a face of any standing building or one street ({STREET} m) from it, "
                    "lined up with either end of that face; impossible spots removed (territory, overlap, resources)",
-           "maps": {}, "dropped": [], "steps": [], "summary": {}, "flags": dict(VARIANT)}
+           "maps": {}, "dropped": [], "steps": [], "summary": {}, "flags": dict(VARIANT), "gates": []}
     placed: list = []
     dropped: dict = {}
+    gates: list = []          # picked gates: {"ring", "side", "t", "rect"} (rect None = no gate on that side)
     for n, ev in enumerate(events, 1):
         mnt = ev["minute"]
         m, drops = town_maps(snaps, mnt, placed, dropped, hsize)
@@ -2156,6 +2332,8 @@ def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line
             run["maps"][str(mnt)] = map_payload(m)
         run.setdefault("map", map_payload(m))
         b = TOWN_BUILDERS.get(VARIANT["name"], TownBuilder3)(m, goal, placed, ev)
+        b.gate_rects = [g["rect"] for g in gates if g["rect"]]
+        b.gate_list = gates
         prompt, options = town_build(b, goal, n, len(events))
         if not options:
             run["summary"]["error"] = f"q{n}: no possible spot for the {ev['kind']}"
@@ -2186,10 +2364,16 @@ def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line
             "building": rect_world(m, pick["rect"], ev["kind"]), "ms": r.get("ms") or round((time.time() - t0) * 1000)})
         run["summary"] = {"buildings": len(placed), "houses": len(placed), "touching_another": None,
                           "dropped": len(run["dropped"])}
-        save_real(run)
         if cd.VERBOSE:
             print(f"q{n:2d} m{mnt:2d} {ev['kind']:13s} {len(options):3d} opts -> p={probs.get(r['choice'])}: {pick['text'][:170]}",
                   flush=True)
+        if VARIANT.get("gate_q") and isinstance(b, TownBuilder15):
+            err = ask_gates(b, m, goal, placed, gates, run, n, dry)
+            if err:
+                run["summary"]["error"] = err
+                save_real(run)
+                break
+        save_real(run)
     run["buildings"] = [s["building"] for s in run["steps"] if s.get("building")]
     save_real(run)
     kinds = {}

@@ -587,3 +587,36 @@ Lessons (rounds 18-20):
     closed (a way out, a gate).
 32. Gate decisions sit near .5 at best; three of them plus "no later building in the gate" in every run is
     (.5)^3 per run on this design - wording moves each by .05-.3, not to .9.
+
+## Rounds 21-22: a gate question per side of each ring (2026-10-07)
+
+Design (town15/16, flag `gate_q`): when a building starts a ring (the first of a new square-distance band), Jev is
+asked once per side of that ring: "where is the gate on the <side> of the <first> ring?". Options: positions along
+the side in 5 m steps (the whole gate inside the side, not at a corner), in compass words from the side's middle
+("5 m south-west of the middle of the front side"), each with what stands in it and where its street leads (mines,
+berry bushes, trees, Petra's buildings, the enemy when known); plus "no gate on the <side> ...: that side stays
+closed". Positions where a building already stands are impossible. A picked gate is a street-wide strip from the
+civic centre's face out through the ring and one street beyond; building spots overlapping it are impossible, so
+an outer ring's gate can only line up with the inner one. A side with only "no gate" left is not asked. Same four
+questions for every civ. The extra gate facts of rounds 15-19 are off; the round-14/18-20 spot and word rules stay.
+
+| round | change | runs | relative (with front + left + right) | ways out | width | gate sides | corner/back | street |
+|---|---|---|---|---|---|---|---|---|
+| 21 | gate questions | 123822, 123824, 123826 | 0/3 | 3, 2, 2 | 96, 88, 88 m | 1, 1, 1 | 2, 1, 1 | .55, .80, .80 |
+| 22 | + spots against either edge of a gate's strip, inner face on the ring's inner face; fact "beside the gate on the front side of the first ring" | 124331, 124333, 124335 | **3/3** | 5, 4, 6 (v1 8) | 84, 84, 76 m (96) | 3, 3, 3 (2) | 2, 1, 2 (3) | .75, .25, .67 (0) |
+
+Gate picks, ring 1, every run of rounds 21-22: front "5 m south-west of the middle" .71-.78 (berry bushes stand in it),
+left flank "in the middle" .81-.87, right flank "in the middle" .93-.96 (the stone mine stands in it), back "no gate"
+1.0. Ring 2 (round 22): front 5 m south-west .75-.86, left middle .79-.83, right middle .84 / "no gate" .61, .56,
+back "no gate" .69-.97.
+
+Round 21 failure: the picked strips split the ring's rows and nothing stood on the far side of a gate to build from
+(those spots read "N m from its nearest building"); Jev started ring 2 at q8 and the right flank / front-right stayed
+open (one 64 m opening). Round 22 adds the missing spots (derived from the gate strip, which stands like a building).
+
+Stop rule met (3/3 relative pass with front + left + right). Still open: a 34 m opening on the back in every run
+(counted in corner/back, still <= v1's 3); the metal-mine corner (10 m) in 124335; absolute v1 measures (<= 3 ways
+out, no back opening, street >= 80 %) not met.
+
+Lesson 33: a decision Jev must make once (where the gate goes) asked once, with its consequence, is taken at
+.7-1.0; spread over thirty building questions it was a .5 coin flip each time. Code then removes what would undo it.
