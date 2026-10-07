@@ -675,3 +675,25 @@ Jev's absolute (132053): 8 ways out, back corner 8 m, back 4 m slit.
 
 Lesson 34: a time-critical spot (the field arrives at minute 8) needs weight, not words: one option at .05 loses to
 forty; five options that all say the same consequence carry .2 and get built.
+
+## Round 28: overflow split by side, not by code ranking (2026-10-07)
+
+Rule (Josue via the lead): code must not truncate or rank options. The round-22 fix (ask_in_parts: parts of at most
+255 in nearest-first order, then a final among the parts' picks) grouped options by a code ranking: removed.
+Now a question with more than 255 options is split in two: first "on which side of the civic centre does the new
+<kind> go?" (every side or corner that has a place, each listing every kind of place it offers, unranked), then the
+place among all of that side's options. Runs that used the old split: 125641 (q17), 131626 (q17), 132057 (q17);
+132057's pass in round 27 does not count.
+
+Re-run of the round-27 design with the two-step split: 132632, 132634, 132636.
+| run | relative + F/L/R | back opening | metal corner | two-step questions (side picked, p) |
+|---|---|---|---|---|
+| 132632 | Y | 22 m | 4 m slit | none |
+| 132634 | Y | 2 m | closed | q17 back .56, q29 back .31, q30 back .30 |
+| 132636 | Y | 2 m | closed | q17 back .68 |
+Jev vs v1: ways out 7, 7, 4 vs 8; width 60, 46, 30 vs 96 m; gate sides 3 vs 2; corner/back 2, 1, 1 vs 3; street .78,
+.22, .23 vs 0.
+
+Stop after 6 rounds (23-28): the full rule (relative + F/L/R, back <= 14 m, metal closed) holds in 2/3 of round 28;
+valid runs of the final design (132053, 132055, 132632, 132634, 132636): 4 of 5. 132632 fails without any split: the
+back middle again empty when Petra's field lands (minute 8).

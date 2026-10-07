@@ -2317,7 +2317,7 @@ Question {n} of {total}: where does the new {kind} go?"""
 
 
 MAX_OPTIONS = 255    # the Jev endpoint answers 503 above 255 criteria (measured 2026-10-07: 250 ok, 256 refused);
-                     # a question with more is asked in parts (ask_in_parts)
+                     # a question with more is split in two: which side, then which place there (ask_two_steps)
 
 
 def town_build(b: TownBuilder, goal: str, n: int, total: int):
@@ -2354,20 +2354,27 @@ def town_maps(snaps: dict, minute: int, placed: list, dropped: dict, hsize: dict
     return Map(snap, hsize), new_drops
 
 
-def ask_in_parts(prompt, options, n):
-    """More options than the endpoint takes (255): ask each part (nearest the CC first, at most 255 each), then ask
-    the final question among the parts' picks.  Returns the final answer and the parts' picks with their p."""
-    k = -(-len(options) // MAX_OPTIONS)
-    size = -(-len(options) // k)
-    picks = []
-    for i in range(k):
-        chunk = options[i * size:(i + 1) * size]
-        r = cd.ask_retry(prompt, chunk, f"{n} part {i + 1}")
-        if not r.get("ok"):
-            return r, None
-        picks.append({"id": r["choice"], "p": (r.get("probabilities") or {}).get(r["choice"]), "of": len(chunk)})
-    final = [o for o in options if o["id"] in {p["id"] for p in picks}]
-    return cd.ask_retry(prompt, final, f"{n} final"), picks
+def ask_two_steps(b, prompt, options, n):
+    """More options than the endpoint takes (255): split the question in two, so Jev makes both choices and code
+    ranks nothing.  First: on which side or corner of the civic centre (every side that has a place, each with every
+    kind of place it offers); then: which place there, among all of that side's options."""
+    groups = {}
+    for o in options:
+        groups.setdefault(b.face_word(o["rect"]), []).append(o)
+    kind = b.new["kind"]
+    first = []
+    for i, (fw, opts) in enumerate(groups.items()):
+        heads = list(dict.fromkeys(o["text"].split(": ", 1)[1].split(", ")[0].split("; ")[0] for o in opts))
+        where = f"at the {fw} of the civic centre" if "corner" in fw else f"on the {fw} of the civic centre"
+        first.append({"id": f"w{i}", "side": fw, "text": f"a {kind} {where}: {len(opts)} places there: " + "; ".join(heads)})
+    q1 = prompt.rsplit("\n", 1)[0] + f"\nQuestion {n}, first part: on which side of the civic centre does the new {kind} go?"
+    r1 = cd.ask_retry(q1, first, f"{n} side", f"On which side of the civic centre does the new {kind} go?")
+    if not r1.get("ok"):
+        return r1, None
+    side = next(o for o in first if o["id"] == r1["choice"])
+    r2 = cd.ask_retry(prompt, groups[side["side"]], f"{n} spot")
+    return r2, {"side": side["side"], "text": side["text"], "p": (r1.get("probabilities") or {}).get(r1["choice"]),
+                "sides": len(first), "of": len(groups[side["side"]])}
 
 
 def ask_gates(b, m, goal, placed, gates, run, n, dry) -> str | None:
@@ -2447,7 +2454,7 @@ def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line
             r = {"ok": True, "choice": options[0]["id"],
                  "probabilities": {o["id"]: (1.0 if i == 0 else 0.0) for i, o in enumerate(options)}}
         elif len(options) > MAX_OPTIONS:
-            r, parts = ask_in_parts(prompt, options, n)
+            r, parts = ask_two_steps(b, prompt, options, n)
         else:
             r = cd.ask_retry(prompt, options, n)
         if not r.get("ok"):
