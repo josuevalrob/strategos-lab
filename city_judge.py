@@ -76,7 +76,7 @@ def flood_gates(b, ps) -> dict:
     return flood(b.cc_rect, ps, R.TOL / 2, HALF, b.m.house_w)
 
 
-def flood(cc, ps, grow, HALF, house_w=14, centre=False) -> dict:
+def flood(cc, ps, grow, HALF, house_w=14, centre=False, max_gates=MAX_GATES) -> dict:
     """Ways out from the civic centre between the pieces `ps` (each grown by `grow` m), on 1 m cells |u|, |v| <= HALF;
     each way out's narrowest point is a gate, walled off before the next.  centre=True paints a cell when its centre
     is inside the grown piece (gaps up to 2 x grow closed, widths true to the metre); else whole cells it touches."""
@@ -111,7 +111,7 @@ def flood(cc, ps, grow, HALF, house_w=14, centre=False) -> dict:
         for a, d in ((t, -h), (t, h), (-h, t), (h, t)):
             starts.add((a + HALF) * n + (d + HALF))
     gates = []
-    for _ in range(MAX_GATES):
+    for _ in range(max_gates):
         best, prev, heap = {}, {}, []
         for c in starts:
             if not wall[c]:
@@ -202,6 +202,7 @@ def judge(run) -> dict:
 
 
 # == round 8+: the town against v1's measures (city_v1.py draws v1's own town on the same timeline) ===========
+TOWN_MAX_GATES = 16  # town: count every way out (v1's own town has more than 8)
 WALL_GROW = 0.5     # town: pieces grown 0.5 m (cell centres): v1's 1 m block gaps are closed, 2 m is a way out
 
 
@@ -239,8 +240,8 @@ def measure_town(cc, ps, want) -> dict:
 
     def ext(pp):
         return int(max([abs(p["rect"][0]) + p["rect"][2] for p in pp] + [abs(p["rect"][1]) + p["rect"][3] for p in pp] + [45])) + 15
-    fl = flood(cc, ps, WALL_GROW, ext(ps), centre=True)      # the city as a wall: every City Planner building
-    fl0 = flood(cc, r0, WALL_GROW, ext(r0), centre=True)     # ring 0 alone (reported, not checked)
+    fl = flood(cc, ps, WALL_GROW, ext(ps), centre=True, max_gates=TOWN_MAX_GATES)   # the city as a wall: every City Planner building
+    fl0 = flood(cc, r0, WALL_GROW, ext(r0), centre=True, max_gates=TOWN_MAX_GATES)  # ring 0 alone (reported, not checked)
     gates = fl["gates"]
     gaps = street_gaps(ps, ring)
     lo, hi = want["street_m"]
@@ -270,7 +271,24 @@ def measure_town(cc, ps, want) -> dict:
         fails.append(f"street between rings {len(ok_gaps)}/{len(gaps)} at {lo}-{hi} m")
     facts["match"] = not fails
     facts["why"] = "; ".join(fails) or "ok"
+    lo_g, hi_g = want["gate_m"]
+    facts["rel"] = {
+        "openings": len(gates) + (0 if fl["closed"] else 1),
+        "open_m": sum(g["width"] for g in gates),
+        "gate_sides": len({g["side"] for g in gates if not g["corner"] and g["side"] in want["gates_at"]
+                           and lo_g <= g["width"] <= hi_g}),
+        "corner_back": sum(1 for g in gates if g["corner"] or g["side"] not in want["gates_at"]),
+        "street_share": round(len(ok_gaps) / len(gaps), 2) if gaps else 0.0}
     return facts
+
+
+REL = {"openings": "low", "open_m": "low", "gate_sides": "high", "corner_back": "low", "street_share": "high"}
+
+
+def relative(jev, v1) -> dict:
+    """Jev at least as good as v1 on every measure (same snapshot, same timeline)."""
+    ok = {k: (jev["rel"][k] <= v1["rel"][k]) if d == "low" else (jev["rel"][k] >= v1["rel"][k]) for k, d in REL.items()}
+    return {"ok": ok, "pass": all(ok.values())}
 
 
 def town_jev(run):
@@ -293,7 +311,7 @@ def judge_town(run, v1_cache={}) -> dict:
         vm, vps, left, vdrop = city_v1.v1_town(until)
         v1_cache[until] = (vm, vps, left, measure_town(vm.rect(vm.cc), vps, want))
     vm, vps, left, v1 = v1_cache[until]
-    out = {"jev": jev, "v1": {**v1, "left_to_petra": left},
+    out = {"jev": jev, "v1": {**v1, "left_to_petra": left}, "relative": relative(jev, v1),
            "v1_buildings": [{**R.rect_world(vm, p["rect"], p["kind"]), "ring": p["ring"], "side": p["side"],
                              "minute": p["minute"]} for p in vps]}
     (R.RUNS_DIR / f"{run['id']}.judge.json").write_text(json.dumps(out, indent=1))
@@ -305,7 +323,9 @@ def town_line(rid, j) -> str:
         g = ", ".join(f"{x['width']} m {x['side']}{' corner' if x['corner'] else ''}" for x in f["gates"])
         return (f"{'MATCH' if f['match'] else 'no'} {f['why']} | openings {f['openings']} [{g}], "
                 f"rings {f['ring0']}/{f['ring1']}/+{f['beyond']}, street {f['street_ok']} {f['street_gaps']}, ring 0 alone {f.get('ring0_openings')}")
-    return f"{rid}:\n  jev {one(j['jev'])}\n  v1  {one(j['v1'])}"
+    rel = j["relative"]
+    cmp = ", ".join(f"{k} {j['jev']['rel'][k]} vs {j['v1']['rel'][k]}{'' if rel['ok'][k] else ' X'}" for k in REL)
+    return f"{rid}: RELATIVE {'PASS' if rel['pass'] else 'no'} ({cmp})\n  jev {one(j['jev'])}\n  v1  {one(j['v1'])}"
 
 
 def latest(n, pattern="*timeline*"):

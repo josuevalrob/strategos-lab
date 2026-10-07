@@ -347,7 +347,18 @@
         (f.closed ? "yes" : "no") + "</td><td>" + f.openings + ": " + esc(gates(f)) + "</td><td>" + esc(f.street_ok) +
         (f.street_gaps.length ? " (" + esc(f.street_gaps.join(", ")) + " m)" : "") + "</td><td>" + f.ring0 + " / " + f.ring1 + " / " + f.beyond + "</td></tr>";
     }
-    return '<div class="small muted">v1 measures at the last minute (ring pieces = City Planner buildings only)</div>' +
+    var rel = "";
+    if (judge.relative) {
+      var names = {openings: "ways out (lower)", open_m: "their total width m (lower)", gate_sides: "gate sides front/left/right (higher)",
+                   corner_back: "corner or back openings (lower)", street_share: "street 8–12 m share (higher)"};
+      rel = '<div class="small muted">Relative to v1 on the same map and timeline: <b class="' + (judge.relative.pass ? "on-t\">PASS" : "off-t\">no") +
+        "</b></div><table class=\"judge\"><tr><th>measure</th><th>Jev</th><th>v1</th><th></th></tr>" +
+        Object.keys(names).map(function (k) {
+          return "<tr><td>" + names[k] + "</td><td>" + judge.jev.rel[k] + "</td><td>" + judge.v1.rel[k] + "</td><td class=\"" +
+            (judge.relative.ok[k] ? "on-t\">ok" : "off-t\">worse") + "</td></tr>";
+        }).join("") + "</table>";
+    }
+    return rel + '<div class="small muted">v1 measures at the last minute (ring pieces = City Planner buildings only)</div>' +
       '<table class="judge"><tr><th></th><th>result</th><th>ring 0 closed</th><th>openings (≤3, one each at front, left, right)</th>' +
       "<th>street between rings 8–12 m</th><th>ring 0 / 1 / beyond</th></tr>" + row("Jev", judge.jev) + row("v1", judge.v1) + "</table>";
   }

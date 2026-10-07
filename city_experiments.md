@@ -498,3 +498,40 @@ Lessons (rounds 11-13):
     but the gate phrase, once said early on every side, wins on too many sides (round 13).
 27. A gate composed into the ring clause ("continues the first ring ... across a gate one street wide") is taken
     where a lone "in the first ring, ... 10 m from its nearest building" was not (.49 vs .30 for plain continuing).
+
+## Round 14: the corner gap; scored against v1's own town (2026-10-07)
+
+Why the corner gap: a row grows in 15 m steps (house + 1 m) from where it started, often a civic centre face end;
+where it reaches the perpendicular row a strip of 2-13 m is left (100610: the left-flank row ends at v = 15, the
+front row's inner face is at v = 25: a 10 x 14 m strip). No house fits; the spot rules offered nothing that closes
+it, and a spot that would (flush against the front row in the flank row's line) overlaps the row already built.
+Fix (town12, flag `cross`): spots in one ring building's row line (lined up with its faces), flush against a
+building of the perpendicular row of the same ring, offered only where that row really reaches the line (touching
+it): the corner is closed first and the leftover moves along the side; hole spots still fit the tower in a 10-12 m
+strip. Corners = loop points within 15 degrees of a diagonal (as the judge counts corner openings); fact "closes
+the corner of the first ring where the front row meets the left-flank row"; the state lists closed / open corners
+in the same words.
+
+Relative score (city_judge.py, checks.json "_doc_relative"): Jev vs v1's town on the same snapshot and timeline;
+pass = at least as good on every measure: ways out (count), their total width, gate sides (front / left / right
+with an 8-31 m opening), corner-or-back openings, street share (ring-1 buildings 8-12 m from ring 0). Up to 16 ways
+out are counted now (v1 has 8). v1: 8 ways out, 96 m, gate sides 2 (front 16 m, right 16 m; its left opening is
+32 m, 1 m over the gate range), corner/back 3, street 0/7. P3 now read from city_data/civ_overrides/spart.p3.json
+(`--line p3`); civs/spart.json untouched.
+
+| line | runs | relative | ways out | width | gate sides | corner/back | street share |
+|---|---|---|---|---|---|---|---|
+| P3 | 102350, 102354, 102358 | PASS 3/3 | 4, 4, 4 (v1 8) | 30, 30, 30 m (96) | 2, 2, 2: left + right (2) | 2, 2, 2 (3) | .65, .33, .69 (0) |
+| verbatim | 102348, 102352, 102356 | 0/3 | 2, 3, 2 | 36, 28, 16 m | 0, 0, 0 (worse) | 2, 3, 2 | .36, .25, .19 |
+
+Corner-closing spots were picked in every run (P3 q9/q10/q12 at .14-.25; verbatim q7/q8/q11 at .27-.45). P3
+corner/back openings per run: round 12 3, 3, 5 -> 2, 2, 2; the one left is the front-right corner at the metal
+mine (10 m), plus a 4 m slit on the back. Absolute v1 measures for P3 (reference): <= 3 ways out 0/3, front gate
+0/3, left 3/3, right 3/3, no corner/back 0/3, street >= 80 % 0/3.
+
+Caveats: the gate-side tie (2 vs 2) holds because v1's left opening reads 32 m (gate range 8-31 m from v1's own
+geometry; measured to ~1 m); counted as a gate, v1 has 3 and P3 fails that measure. v1's street share is 0 (its
+buildings sit flush to the outer face of 24 m blocks: 14-20 m streets), so any ring 2 beats it.
+
+Lesson 28: a gap no house fits is a spot-rule problem, not a prompt problem: offer the spot that closes the corner
+before the leftover lands there, and name it in the goal's nouns (rows, corner); Jev takes it (.27-.45).

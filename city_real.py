@@ -681,13 +681,17 @@ def save_real(run: dict):
     tmp.replace(idx_path)
 
 
-def civ_line(civ: str) -> str:
+def civ_line(civ: str, line: str | None = None) -> str:
     """The civ's town-layout line from the named field (city_data/civ_layout.json), civ JSON first, then the
-    lab-side override.  No per-civ code and no text[] index."""
+    lab-side override.  No per-civ code and no text[] index.  `line` names a lab-side override to read instead,
+    city_data/civ_overrides/<civ>.<line>.json (a proposed line; the civ JSON is not touched)."""
     def get(d):
         for part in LAYOUT["field"].split("."):
             d = d.get(part) if isinstance(d, dict) else None
         return d
+    if line:
+        path = DATA / "civ_overrides" / f"{civ}.{line}.json"
+        return get(json.loads(path.read_text())) or exit(f"{path}: no {LAYOUT['field']}")
     for path in (CIVS / f"{civ}.json", DATA / "civ_overrides" / f"{civ}.json"):
         if path.exists():
             line = get(json.loads(path.read_text()))
@@ -1878,9 +1882,140 @@ class TownBuilder9(TownBuilder8):
         return "\n".join(lines)
 
 
+CORNER_DEG = 15      # a loop point within this of a diagonal (seen from the CC) is at a corner, as the judge counts
+
+
+class TownBuilder12(TownBuilder9):
+    """town12 (round 14): corners.  Why the corner gap: a row grows by 15 m steps from wherever it started (often a
+    civic centre face end), so where it reaches the other side's row a strip of 2-13 m is left that no house fits.
+    Spots added: in one row's line (lined up with its faces), flush against the perpendicular row of the same ring,
+    so the corner is closed first and the leftover moves along the side; holes (round 8) fit a tower in a 10-12 m
+    strip.  Corners are the loop points within 15 degrees of a diagonal (an opening near a corner is a corner
+    opening, as the judge counts it), and the fact names the two rows: 'closes the corner of the first ring where
+    the front row meets the left-flank row'."""
+
+    def loop(self, band):
+        out = []
+        for u, v, side, _ in super().loop(band):
+            ang = math.degrees(math.atan2(v, u)) % 360
+            out.append((u, v, side, any(abs((ang - k + 180) % 360 - 180) <= CORNER_DEG for k in (45, 135, 225, 315))))
+        return out
+
+    @staticmethod
+    def corner_key(u, v):
+        return (1 if u > 0 else -1, 1 if v > 0 else -1)
+
+    @staticmethod
+    def corner_words(key) -> str:
+        su, sv = key
+        return f"where the {'front' if sv > 0 else 'back'} row meets the {'right' if su > 0 else 'left'}-flank row"
+
+    def side_state(self, band, runs):
+        pts = self.loop(band)
+        sides, corners = set(), set()
+        for o in runs:
+            if len(o) + 1 >= 8:
+                sides |= {pts[i][2] for i in o if not pts[i][3]}
+            corners |= {self.corner_key(pts[i][0], pts[i][1]) for i in o if pts[i][3]}
+        return sides, corners
+
+    def cross_spots(self, hu, hv):
+        """In the line of one ring building's row, flush against a building of the perpendicular row of the same
+        ring (the corner where the two rows meet)."""
+        for _, _, mem in self.bands(self.placed):
+            for a in mem:
+                ra, axa = a["rect"], self.radial(a["rect"])[0]
+                for b in mem:
+                    rb, axb = b["rect"], self.radial(b["rect"])[0]
+                    if a is b or axa == axb:
+                        continue
+                    # a's row runs along axis 1 - axa (its line = a's extent across axa); b's row runs along 1 - axb = axa
+                    h = (hu, hv)
+                    line = (ra[axa] - ra[2 + axa] + h[axa], ra[axa] + ra[2 + axa] - h[axa])
+                    toward = 1 if ra[1 - axa] > rb[1 - axa] else -1
+                    along = rb[1 - axa] + toward * (rb[3 - axa] + FLUSH + h[1 - axa])
+                    for c in line:
+                        cu, cv = (c, along) if axa == 0 else (along, c)
+                        r = (cu, cv, hu, hv)
+                        if Map.gap(r, rb) <= TOL:
+                            yield cu, cv
+
+    def spots(self) -> list:
+        out = super().spots()
+        if not VARIANT.get("cross"):
+            return out
+        seen = set(out)
+        for hu, hv in self.shapes():
+            for cu, cv in self.cross_spots(hu, hv):
+                r = (round(cu * 2) / 2, round(cv * 2) / 2, hu, hv)
+                if r not in seen:
+                    seen.add(r)
+                    if self.possible(r):
+                        out.append(r)
+        out.sort(key=lambda r: (Map.gap(r, self.cc_rect), r))
+        return out
+
+    def side_fact(self, r) -> str:
+        bands = self.bands(self.placed)
+        if not bands:
+            return ""
+        k, rel = self.where_rings(r, bands)
+        if rel != "in":
+            return ""
+        band = bands[k - 1]
+        before, after = self.openings(band), self.openings(band, r)
+        if before == after:
+            return ""
+        sb, cb = self.side_state(band, before)
+        sa, ca = self.side_state(band, after)
+        ring = f"of the {ORD[k]} ring"
+        parts = [f"closes the corner {ring} {self.corner_words(c)}" for c in sorted(cb - ca)]
+        parts += [f"closes the {s} {ring}" for s in SIDES4 if s in sb and s not in sa]
+        fw = self.face_word(r)
+        if fw in SIDES4 and fw in sa:
+            g = self.gate_left(band, after, fw)
+            if g and g != self.gate_left(band, before, fw):
+                parts.append(f"leaves a gate one street wide ({metres(g)}) on the {fw} {ring}")
+        if VARIANT.get("gate_early") and not any("leaves a gate" in x for x in parts):
+            m = TownBuilder7.main_clause(self, r)
+            if ", leaving a gate one street wide (" in m:
+                g = m.split(", leaving a gate one street wide (")[1].split(")")[0]
+                p = min(band[2], key=lambda q: Map.gap(r, q["rect"]))
+                side = self.face_word(((r[0] + p["rect"][0]) / 2, (r[1] + p["rect"][1]) / 2, 0, 0))
+                parts.append(f"leaves a gate one street wide ({g}) {'at' if 'corner' in side else 'on'} the {side} {ring}")
+        return "; ".join(parts[:2])
+
+    def state(self) -> str:
+        w, ps = self.w, self.placed
+        lines = [f"Our civic centre: its front faces {w.face['front']}, its flanks face {w.face['left flank']} "
+                 f"and {w.face['right flank']}, its back faces {w.face['back']}."]
+        if not ps:
+            lines.append("Buildings of the city so far: none yet.")
+            return "\n".join(lines)
+        lines.append(f"Buildings of the city so far: {num(len(ps))}: {kind_list([p['kind'] for p in ps])}.")
+        bands = self.bands(ps)
+        allc = [(-1, 1), (1, 1), (1, -1), (-1, -1)]
+        for k, band in enumerate(bands, 1):
+            a, b, mem = band
+            street = self.gap_words(a, "the civic centre") if k == 1 else self.gap_words(
+                sorted(self.street_to(p["rect"], bands[k - 2][2]) for p in mem)[len(mem) // 2], f"the {ORD[k - 1]} ring")
+            runs = self.openings(band)
+            so, co = self.side_state(band, runs)
+            gates = [f"a gate one street wide ({metres(g)}) on the {s}" for s in SIDES4
+                     for g in [self.gate_left(band, runs, s)] if g]
+            closed = [f"the {s}" for s in SIDES4 if s not in so] + [f"the corner {self.corner_words(c)}" for c in allc if c not in co]
+            opened = [f"the {s}" for s in SIDES4 if s in so and not self.gate_left(band, runs, s)] + \
+                     [f"the corner {self.corner_words(c)}" for c in allc if c in co]
+            lines.append(f"The {ORD[k]} ring ({street}): {num(len(mem))} building{'s' if len(mem) > 1 else ''}. "
+                         + (f"Closed: {', '.join(closed)}. " if closed else "")
+                         + (f"Gates: {', '.join(gates)}. " if gates else "")
+                         + (f"Still open: {', '.join(opened)}." if opened else ""))
+        return "\n".join(lines)
+
+
 TOWN_BUILDERS = {"town1": TownBuilder, "town2": TownBuilder, "town3": TownBuilder3, "town4": TownBuilder4, "town5": TownBuilder4,
                  "town6": TownBuilder6, "town7": TownBuilder7, "town8": TownBuilder8, "town9": TownBuilder9, "town10": TownBuilder9,
-                 "town11": TownBuilder9}
+                 "town11": TownBuilder9, "town12": TownBuilder12}
 
 
 TOWN_TEMPLATE = """Role: City planner.
@@ -1927,15 +2062,16 @@ def town_maps(snaps: dict, minute: int, placed: list, dropped: dict, hsize: dict
     return Map(snap, hsize), new_drops
 
 
-def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None) -> dict:
+def town_run(civ: str, dry: bool, until: int, goal_text: str | None = None, line: str | None = None) -> dict:
     snaps = load_all(TOWN_LOG)
     events = queue_events(TOWN_LOG, until)
     hsize = {"w": PITCH, "d": PITCH, "tpl": "house"}
-    goal = goal_text or civ_line(civ)
+    goal = goal_text or civ_line(civ, line)
     now = datetime.now()
-    run = {"id": f"{now:%Y%m%d-%H%M%S}-{VARIANT['name']}-{civ}" + ("-prop" if goal_text else "") + ("-dry" if dry else ""),
+    run = {"id": f"{now:%Y%m%d-%H%M%S}-{VARIANT['name']}-{civ}" + ("-prop" if goal_text else "") + (f"-{line}" if line else "")
+                 + ("-dry" if dry else ""),
            "mode": "real", "town": True, "timeline": True, "variant": VARIANT["name"],
-           "civ": civ + (" (proposed line)" if goal_text else ""), "dry": dry, "goal_text": goal,
+           "civ": civ + (" (proposed line)" if goal_text else f" ({line} line)" if line else ""), "dry": dry, "goal_text": goal,
            "started": now.isoformat(timespec="seconds"),
            "source": {"log": str(TOWN_LOG), "until": until, "minutes": [e["minute"] for e in events],
                       "events": [{k: e[k] for k in ("minute", "t", "tpl", "kind")} for e in events]},
@@ -2011,6 +2147,7 @@ def main(argv=None) -> int:
     ap.add_argument("--variant", default="real1",
                     help="real1 | real2 (lines say around/away from the civic centre) | pieces | a town variant name")
     ap.add_argument("--goal-text", default=None, help="test a proposed civ line (the civ JSON is not touched)")
+    ap.add_argument("--line", default=None, help="--town: read the layout line from city_data/civ_overrides/<civ>.<line>.json")
     ap.add_argument("--set", action="append", default=[], help="extra VARIANT flag for a variant, e.g. apart_words=1")
     ap.add_argument("--flags", default="", help="comma list of VARIANT flags to switch on")
     ap.add_argument("--timeline", action="store_true",
@@ -2040,7 +2177,7 @@ def main(argv=None) -> int:
         return 0
     for _ in range(args.runs):
         if args.town:
-            town_run(args.civ, args.dry, args.until, args.goal_text)
+            town_run(args.civ, args.dry, args.until, args.goal_text, args.line)
         elif args.timeline:
             timeline_run(args.civ, args.dry, args.goal_text)
         else:
