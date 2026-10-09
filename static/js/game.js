@@ -272,8 +272,8 @@
       '</code>. Nothing here is saved to files. First Laya ask loads the model (~40 s).</p>' +
       '<label class="small muted">Prompt <span class="js-ed-p"></span></label><textarea class="play-ta js-p" rows="14" spellcheck="false"></textarea>' +
       '<label class="small muted">Question (instructions, options + criteria) <span class="js-ed-q"></span></label><textarea class="play-ta js-q" rows="10" spellcheck="false"></textarea>' +
-      '<p><button class="btn js-ask-both">Ask Jev + Laya</button> <button class="btn tiny js-reset">Reset to logged</button> <span class="js-err"></span></p>' +
-      '<div class="ask-grid"><div class="js-ask-jev"></div><div class="js-ask-laya"></div></div>';
+      '<p><button class="btn js-ask-both">Ask Jev + Laya + PPLX</button> <button class="btn tiny js-reset">Reset to logged</button> <span class="js-err"></span></p>' +
+      '<div class="ask-grid"><div class="js-ask-jev"></div><div class="js-ask-laya"></div><div class="js-ask-pplx"></div></div>';
     var ta = out.querySelector(".js-p"), tq = out.querySelector(".js-q");
     ta.value = c.draft.prompt; tq.value = c.draft.questions;
     function marks() {
@@ -284,7 +284,7 @@
     tq.addEventListener("input", function () { c.draft.questions = tq.value; marks(); });
     marks();
     function card(model, st) {
-      var name = model === "jev" ? "Jev" : "Laya", el = out.querySelector(".js-ask-" + model);
+      var name = { jev: "Jev", laya: "Laya", pplx: "PPLX" }[model], el = out.querySelector(".js-ask-" + model);
       if (!el) return;
       if (!st) { el.innerHTML = '<div class="ask-card"><b>' + name + '</b><p class="muted small">not asked yet</p></div>'; return; }
       if (st.pending) { el.innerHTML = '<div class="ask-card"><b>' + name + '</b><p class="muted small">asking…</p></div>'; return; }
@@ -304,7 +304,7 @@
         (bars ? '<div class="probs">' + bars + "</div>" : "") +
         '<details><summary class="small muted">raw reply</summary><pre class="block">' + Lab.esc(r.raw || "") + "</pre></details></div>";
     }
-    function draw() { card("jev", c.jev); card("laya", c.laya); }
+    function draw() { card("jev", c.jev); card("laya", c.laya); card("pplx", c.pplx); }
     draw();
     out.querySelector(".js-reset").addEventListener("click", function () {
       ta.value = c.draft.prompt = orig.prompt; tq.value = c.draft.questions = orig.questions; marks();
@@ -314,7 +314,7 @@
       err.innerHTML = "";
       try { qs = JSON.parse(tq.value); } catch (x) { err.innerHTML = '<span class="pill err">Question is not valid JSON: ' + Lab.esc(x.message) + "</span>"; return; }
       var edited = ta.value !== orig.prompt || tq.value !== orig.questions;
-      ["jev", "laya"].forEach(function (model) {
+      ["jev", "laya", "pplx"].forEach(function (model) {
         c[model] = { pending: true };
         Lab.post("/api/ask", { run: V.run, idx: V.selected, model: model, prompt: ta.value, questions: qs }).then(function (res) {
           c[model] = { r: res.result, edited: edited };

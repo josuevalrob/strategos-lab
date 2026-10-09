@@ -451,7 +451,7 @@ class RunModel:
 
 
 SEAT_COLORS = ("blue", "red", "green", "yellow", "teal", "purple", "orange", "grey")
-DISPLAY = {"jev": "Jev", "laya": "Laya", "drex": "Drex"}
+DISPLAY = {"jev": "Jev", "laya": "Laya", "pplx": "PPLX", "drex": "Drex"}
 
 
 def derived_seats(header: dict) -> list[dict]:

@@ -86,7 +86,7 @@ def get_question(run: str, idx: int) -> dict:
 
 def ask(run: str, idx: int, prompt: str | None = None, question: dict | None = None,
         models: list | None = None, goal: str | None = None) -> dict:
-    models = [m for m in (models or ["jev", "laya"]) if m in ("jev", "laya")]
+    models = [m for m in (models or ["jev", "laya"]) if m in ("jev", "laya", "pplx")]
 
     def one(m):
         body = {"run": run, "idx": idx, "model": m}
@@ -99,7 +99,7 @@ def ask(run: str, idx: int, prompt: str | None = None, question: dict | None = N
         r = _post("/api/ask", body).get("result") or {}
         return m, {k: r.get(k) for k in ("ok", "choice", "probabilities", "error", "ms", "raw")}
 
-    with ThreadPoolExecutor(2) as ex:
+    with ThreadPoolExecutor(3) as ex:
         out = dict(ex.map(one, models))
     q = get_question(run, idx)
     out["logged"] = q.get("logged")
@@ -191,7 +191,7 @@ def get_stats(run: str, minute: int | None = None, series: bool = False, raw: bo
 
 S = {"type": "string"}
 I = {"type": "integer"}
-MODELS = {"type": "array", "items": {"type": "string", "enum": ["jev", "laya"]},
+MODELS = {"type": "array", "items": {"type": "string", "enum": ["jev", "laya", "pplx"]},
           "description": "default both"}
 TOOLS = {
     "list_runs": (list_runs, "Logged Strategos games (runs), newest first: run id, model, question count, status.",

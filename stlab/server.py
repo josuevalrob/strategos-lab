@@ -189,7 +189,7 @@ class Lab:
         m = self._run({"run": [str(body.get("run") or "")]})
         idxs = [int(i) for i in (body.get("idxs") or [])][:50]
         edits = body.get("edits") or {}
-        models_ = [x for x in (body.get("models") or ["jev", "laya"]) if x in ("jev", "laya")]
+        models_ = [x for x in (body.get("models") or ["jev", "laya"]) if x in ("jev", "laya", "pplx")]
         if not idxs or not isinstance(edits, dict):
             raise editor.Refused("bad_request", "need idxs (list) and edits ({path: text})")
         rows = [m.row(i) for i in idxs]
